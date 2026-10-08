@@ -1,0 +1,44 @@
+# Demo configuration — tuned for offline projection embedder testing
+# Use config.yaml (threshold 0.75) with pretrained DINOv2/ResNet50 in production
+
+model:
+  name: "resnet50"
+  device: "auto"
+  fallback: "resnet50"
+  embedding_dim: 512
+
+matching:
+  similarity_threshold: 0.98   # strict threshold for offline demo embedder
+  top_k: 5
+
+change_detection:
+  threshold: 0.30
+
+severity:
+  w1: 0.6
+  w2: 0.4
+  priority_threshold: 0.5
+
+revisit_priority:
+  w3: 0.5
+  w4: 0.3
+  w5: 0.2
+  max_days_since_inspection: 30.0
+
+runtime:
+  frame_skip: 1
+  batch_size: 8
+
+logging:
+  level: "INFO"
+
+memory:
+  store_path: "data/demo_semantic_memory.json"
+  vector_backend: "numpy"
+
+asset_criticality:
+  solar_panel: 0.7
+  utility_pole: 0.8
+  building: 0.6
+  machinery: 0.9
+  default: 0.5

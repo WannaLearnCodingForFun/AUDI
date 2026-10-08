@@ -1,0 +1,384 @@
+{
+  "dataset_type": "DEMO_SYNTHETIC",
+  "warning": "NOT for production training",
+  "assets": [
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_a_train_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_a_train_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_a_train_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_b_train_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_b_train_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_b_train_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_c_train_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_c_train_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "train",
+      "path": "dataset/train/solar_panel/solar_panel_c_train_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "train",
+      "path": "dataset/train/utility_pole/utility_pole_a_train_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "train",
+      "path": "dataset/train/utility_pole/utility_pole_a_train_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "train",
+      "path": "dataset/train/utility_pole/utility_pole_a_train_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "train",
+      "path": "dataset/train/building/building_a_train_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "train",
+      "path": "dataset/train/building/building_a_train_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "train",
+      "path": "dataset/train/building/building_a_train_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "train",
+      "path": "dataset/train/machinery/machinery_a_train_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "train",
+      "path": "dataset/train/machinery/machinery_a_train_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "train",
+      "path": "dataset/train/machinery/machinery_a_train_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_a_validation_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_a_validation_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_a_validation_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_b_validation_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_b_validation_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_b_validation_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_c_validation_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_c_validation_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "validation",
+      "path": "dataset/validation/solar_panel/solar_panel_c_validation_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "validation",
+      "path": "dataset/validation/utility_pole/utility_pole_a_validation_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "validation",
+      "path": "dataset/validation/utility_pole/utility_pole_a_validation_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "validation",
+      "path": "dataset/validation/utility_pole/utility_pole_a_validation_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "validation",
+      "path": "dataset/validation/building/building_a_validation_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "validation",
+      "path": "dataset/validation/building/building_a_validation_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "validation",
+      "path": "dataset/validation/building/building_a_validation_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "validation",
+      "path": "dataset/validation/machinery/machinery_a_validation_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "validation",
+      "path": "dataset/validation/machinery/machinery_a_validation_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "validation",
+      "path": "dataset/validation/machinery/machinery_a_validation_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_a_test_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_a_test_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_a",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_a_test_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_b_test_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_b_test_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_b",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_b_test_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_c_test_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_c_test_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "solar_panel_c",
+      "asset_type": "solar_panel",
+      "split": "test",
+      "path": "dataset/test/solar_panel/solar_panel_c_test_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "test",
+      "path": "dataset/test/utility_pole/utility_pole_a_test_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "test",
+      "path": "dataset/test/utility_pole/utility_pole_a_test_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "utility_pole_a",
+      "asset_type": "utility_pole",
+      "split": "test",
+      "path": "dataset/test/utility_pole/utility_pole_a_test_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "test",
+      "path": "dataset/test/building/building_a_test_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "test",
+      "path": "dataset/test/building/building_a_test_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "building_a",
+      "asset_type": "building",
+      "split": "test",
+      "path": "dataset/test/building/building_a_test_02.png",
+      "condition_damage": 0.3
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "test",
+      "path": "dataset/test/machinery/machinery_a_test_00.png",
+      "condition_damage": 0.0
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "test",
+      "path": "dataset/test/machinery/machinery_a_test_01.png",
+      "condition_damage": 0.15
+    },
+    {
+      "asset_id": "machinery_a",
+      "asset_type": "machinery",
+      "split": "test",
+      "path": "dataset/test/machinery/machinery_a_test_02.png",
+      "condition_damage": 0.3
+    }
+  ]
+}
