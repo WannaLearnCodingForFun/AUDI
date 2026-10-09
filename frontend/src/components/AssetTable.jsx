@@ -1,38 +1,28 @@
-export default function AssetTable({ assets, onSelect }) {
-  if (!assets?.length) return <p className="loading">No assets in semantic memory.</p>
+import { Link } from 'react-router-dom'
+import { Empty, fmt, Simulated, when } from './ui'
 
+export default function AssetTable({ assets }) {
+  if (!assets.length) return <Empty>No assets yet — fly a mission or run <code>make memory</code>.</Empty>
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Asset ID</th>
-            <th>Condition</th>
-            <th>Severity</th>
-            <th>Revisit Priority</th>
-            <th>Last Inspected</th>
-            <th>Status</th>
+    <table className="table">
+      <thead>
+        <tr>
+          <th>Asset</th><th>Type</th><th>Site</th><th>Condition</th><th>Revisit R</th><th>Last checked</th><th />
+        </tr>
+      </thead>
+      <tbody>
+        {assets.map((a) => (
+          <tr key={a.asset_id}>
+            <td><Link to={`/assets/${a.asset_id}`} className="mono">{a.asset_id}</Link></td>
+            <td>{a.asset_type}</td>
+            <td>{a.site_id}</td>
+            <td className={a.current_is_defect ? 'text-crit' : ''}>{a.current_condition}</td>
+            <td>{fmt(a.revisit_priority_score)}</td>
+            <td>{when(a.last_checked_ts)}</td>
+            <td><Simulated on={a.simulated} /></td>
           </tr>
-        </thead>
-        <tbody>
-          {assets.map(a => (
-            <tr key={a.asset_id} onClick={() => onSelect?.(a.asset_id)} style={{ cursor: onSelect ? 'pointer' : 'default' }}>
-              <td style={{ fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>{a.asset_id}</td>
-              <td>{a.condition}</td>
-              <td>{(a.severity_score ?? 0).toFixed(2)}</td>
-              <td>{(a.revisit_priority ?? 0).toFixed(2)}</td>
-              <td>{a.last_inspected ? a.last_inspected.slice(0, 16).replace('T', ' ') : '—'}</td>
-              <td>
-                {(a.severity_score ?? 0) > 0.5
-                  ? <span className="badge badge-high">Priority</span>
-                  : a.condition !== 'Normal'
-                    ? <span className="badge badge-warn">Defect</span>
-                    : <span className="badge badge-normal">Normal</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </table>
   )
 }

@@ -1,310 +1,188 @@
-# AUDI — AI-Powered Persistent Semantic Memory for Intelligent Drone Inspection
+# AUDI — persistent semantic memory for drone inspection
 
-AUDI provides the ML component for **Persistent Semantic Memory**: asset re-identification, visual similarity matching, and historical condition comparison across multiple drone inspection missions.
+AUDI remembers every physical asset it has inspected (solar panels, utility poles and
+insulators, building/concrete surfaces, machinery). On each flight it re-identifies the
+assets it sees, compares their condition with the last inspection, scores the change, alerts
+the operator live and escalates critical defects to maintenance. It also ranks which assets
+to revisit next.
 
-## Installation
+The requirements are the AUDI SRS (FR-1 – FR-20, NFR-1 – NFR-3).
+`docs/SRS_TRACEABILITY.md` maps every requirement to code and tests, and
+`docs/SRS_AMENDMENTS.md` lists the changes the SRS document itself needs. `PROGRESS.md`
+is the verified work log.
+
+## Architecture
+
+```
+ camera / RTSP / video file ──┐            browser camera (getUserMedia) ──┐
+                              ▼                                            ▼
+                    ml/live/camera.py  CameraReader (reconnect, latest-frame-only)
+                              │
+                    ml/live/pipeline.py  frame skip → duplicate-frame skip (D8)
+                              │
+          ┌───────────────────┴──────────── SemanticMemoryEngine.process_frame (ml/semantic_memory.py)
+          │  detect        ml/detector.py         YOLO-World (open vocabulary) | full_frame
+          │  track         ml/tracker.py          IoU + embedding + thumbnail NCC, one identity run per track
+          │  embed         ml/embedding_model.py  DINOv2 ViT-S/14 (CLS + patch tokens)
+          │  identity      ml/asset_identity.py   ArUco → location gate → top-k (memory/vector_memory.py)
+          │                                       → SIFT + RANSAC verification → visual-only → new asset
+          │  condition     ml/condition_classifier.py  per-asset-type heads on frozen DINOv2
+          │  change        ml/change_detector.py  M = α·condition change + (1−α)·patch-token change
+          │  severity      ml/severity.py         S = (w1·M + w2·C)·Cf, S = 0 if M below threshold
+          │  store         memory/store.py        SQLite (WAL) + outbox, one transaction per observation
+          └──────────────────────────────────────────────┬──────────────────────────────
+                                                         │
+   api/ (FastAPI, JWT + roles)  ── REST, /ws/live, /ws/notifications, MJPEG /api/live/stream
+        │   ml/mission.py      session start/end, briefing (FR-4), revisit priority (ml/revisit_priority.py)
+        │   ml/reporting.py    post-flight report JSON/HTML/PDF (FR-18)
+        │   ml/escalation.py   critical → subscribed maintenance users only (FR-19)
+        │   memory/sync.py     background outbox flush, 10 s bound on start/end sync (NFR-3)
+        ▼
+   frontend/ (React + Vite)                     cloud/ (separate FastAPI service, own DB, JWT)
+   operator · maintenance · admin views         pull_site (FR-2), push_outbox (FR-6/7)
+```
+
+Module boundaries are interfaces, so implementations can be swapped. For example, the embedder
+can be DINOv2, ResNet or a projection embedder; the detector can be YOLO-World or full-frame;
+the vector backend can be NumPy or FAISS (opt-in); and the cloud store is an HTTP client.
+Every tunable number is in `config.yaml`.
+
+## Setup
+
+Requires Python 3.11 or 3.12, Node 18+, and macOS, Linux or Windows. `auto` device selection
+uses CUDA, then Apple MPS, then CPU.
 
 ```bash
-cd AUDI
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+make setup          # .venv + pip install -r requirements.txt + npm ci in frontend/
 ```
 
-**Requirements:** Python 3.10+, PyTorch, torchvision, NumPy, Pillow, PyYAML.
+### Kaggle
 
-DINOv2 is loaded via `torch.hub` on first run (requires internet). If unavailable, the system automatically falls back to torchvision ResNet50, then to a spatial-feature projection embedder for fully offline operation.
-
-**For best matching accuracy**, install pretrained weights:
-```bash
-# macOS Python SSL fix (if weight download fails)
-/Applications/Python\ 3.*/Install\ Certificates.command
-pip install -r requirements.txt
-```
-
-The demo uses `config_demo.yaml` (stricter `similarity_threshold: 0.98`) when running offline with the projection embedder. Production deployments with DINOv2/ResNet50 should use `config.yaml` (threshold 0.75).
-
-## Quick Start (Full System with Kaggle Dataset + Frontend)
+Put your `kaggle.json` (from kaggle.com → Settings → API → Create New Token) in the repo
+root. It is git-ignored. The download script sets `KAGGLE_CONFIG_DIR` to the repo root at
+runtime and `chmod 600`s the file. It never copies or prints the file.
 
 ```bash
-cd AUDI
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# 1. Download Kaggle PV Panel Defect Dataset
-kaggle datasets download -d alicjalena/pv-panel-defect-dataset -p dataset/raw --unzip
-
-# 2. Prepare balanced subset (~360 images)
-PYTHONPATH=. python scripts/prepare_pv_dataset.py
-
-# 3. Build semantic memory from dataset
-PYTHONPATH=. python scripts/build_semantic_memory.py
-
-# 4. Start backend API (terminal 1)
-PYTHONPATH=. python run_api.py
-
-# 5. Start frontend (terminal 2)
-cd frontend && npm install && npm run dev
-# Open http://localhost:5173
+make data           # scripts/download_datasets.py + scripts/prepare_unified_dataset.py
+python scripts/download_datasets.py --list               # sources and enabled/optional state
+python scripts/download_datasets.py --include-optional   # also the large optional sets
 ```
 
-## Quick Start (Original Synthetic Demo)
+`dataset/README.md` (generated) lists every source, its licence as stated on Kaggle, the
+label mapping and limitations. `dataset/processed/STATS.md` has the per-class counts and the
+de-duplication report.
+
+### Camera (Philips or any UVC webcam)
 
 ```bash
-# 1. Generate synthetic demo dataset
-python scripts/generate_demo_dataset.py
-
-# 2. Run multi-mission demo
-python demo.py
-
-# 3. Visualize memory state
-python visualize_memory.py
-python visualize_memory.py --plot
-
-# 4. Run tests
-pytest tests/ -v
-
-# 5. Evaluate ML components
-python training/evaluate_model.py
+make camera-probe   # lists cameras and writes reports/camera_probe/cam_<i>.jpg per index
 ```
 
-## Project Structure
+Look at the snapshots to find the external camera. Then set `camera.source` in `config.yaml`
+to its index, a unique part of its device name, an `rtsp://` / `http://` URL, or a video file
+path. On macOS, the terminal running the API needs camera permission (System Settings →
+Privacy & Security → Camera). The camera can be unplugged and plugged back in while
+running; the reader reconnects every `camera.reconnect_seconds`.
 
-```
-AUDI/
-├── ml/                     # Core ML pipeline (embedding, matching, change detection)
-├── memory/                 # Vector search + local/cloud storage abstraction
-├── api/                    # FastAPI backend
-├── frontend/               # React + Vite dashboard
-├── training/               # Optional fine-tuning and evaluation
-├── scripts/                # Dataset preparation utilities
-├── dataset/                # Kaggle PV subset + synthetic demo data
-├── tests/                  # Unit and integration tests
-├── demo.py                 # Multi-mission persistent memory demo
-├── run_api.py              # Start FastAPI backend
-├── visualize_memory.py     # Memory state visualization
-└── config.yaml             # All thresholds and weights
-```
-
-## ML Architecture
-
-```
-Live Camera Frame
-       ↓
-Asset Detection (external — bbox crop supported)
-       ↓
-Asset Crop → AssetEncoder
-       ↓
-Visual Embedding Model (DINOv2 / ResNet50 fallback)
-       ↓
-Normalized Embedding Vector
-       ↓
-Vector Similarity Search (NumPy dev / FAISS-ready interface)
-       ↓
-Persistent Semantic Memory Store
-       ↓
-┌─────────────────────┐
-│ Existing Asset      │ → retrieve history → ChangeDetector → Severity → Update
-│ OR New Asset        │ → register baseline → store embedding
-└─────────────────────┘
-```
-
-### Key Design Principles
-
-1. **Asset Identity ≠ Condition Change** — matching (same physical asset?) and change detection (has condition changed?) are separate operations.
-2. **Database Decoupling** — `SemanticMemoryStore` abstraction; local JSON store works offline; cloud interface ready for future sync.
-3. **Model Replaceability** — embedding model, vector backend, and change detector are swappable without redesigning the pipeline.
-4. **No Magic Numbers** — all thresholds in `config.yaml`.
-
-## Where the Embedding Model Is Used
-
-| Stage | Usage |
-|-------|-------|
-| New asset registration | Generate initial embedding → store in vector memory |
-| Existing asset match | Query embedding vs. all stored embeddings (cosine similarity) |
-| Change detection | Compare current embedding vs. historical embedding sequence |
-| Optional fine-tuning | `training/train_embedding_model.py` with real labeled data |
-
-## How Asset Matching Works
-
-1. Encode cropped asset image → L2-normalized embedding vector.
-2. Search vector memory for top-k candidates.
-3. Compute cosine similarity against all candidates.
-4. If best similarity ≥ `matching.similarity_threshold` (default 0.75) → **existing asset**.
-5. Otherwise → **register new asset**.
-
-```python
-from ml.semantic_memory import SemanticMemoryEngine
-
-engine = SemanticMemoryEngine()
-result = engine.process_observation(image, asset_type="solar_panel")
-# result: asset_id, is_new_asset, match_confidence, change_magnitude, severity_score
-```
-
-## How Change Magnitude Is Calculated
-
-`ChangeDetector.compare()` computes:
-
-```
-combined_similarity = 0.6 × max(historical_similarities) + 0.4 × mean(historical_similarities)
-change_magnitude = clip(1 - combined_similarity, 0, 1)
-```
-
-- **0** = no meaningful change (current observation highly similar to history)
-- **1** = very large change (low similarity to all historical observations)
-
-This is intentionally separate from asset identity matching — the same asset can have high identity similarity but significant condition change when damage appears.
-
-## Severity and Revisit Priority
-
-**Severity** (SRS formula):
-```
-S = (w1 × M + w2 × C) × Cf
-```
-- M = change magnitude (from ML)
-- C = asset criticality (from config, per asset type)
-- Cf = observation/match confidence (from ML)
-
-**Revisit Priority**:
-```
-R = w3 × Sr + w4 × T + w5 × D
-```
-- Sr = recent severity
-- T = historical severity trend rate
-- D = normalized time since last inspection
-
-Default weights and thresholds are in `config.yaml`.
-
-## Persistent Memory Across Missions
-
-AUDI does **not** treat each flight independently:
-
-| Mission | Behavior |
-|---------|----------|
-| Mission 1 | Solar Panel A → no match → **new asset** → baseline stored |
-| Mission 2 | Solar Panel A → embedding search → **matched** → history retrieved → observation appended |
-| Mission 3 | Solar Panel A (damaged) → **matched** → change detected → severity calculated → revisit priority updated |
-| Mission 3 | Building B → no match → **new asset** registered |
-
-Run `python demo.py` to see this scenario with printed memory state after each mission.
-
-Memory persists to `data/demo_semantic_memory.json` (configurable via `config.yaml`).
-
-## Dataset Setup (Kaggle PV Panel Defect Dataset)
-
-**Source:** [PV Panel Defect Dataset](https://www.kaggle.com/datasets/alicjalena/pv-panel-defect-dataset)
-
-Six classes: Clean, Dusty, Bird-drop, Electrical-damage, Physical-damage, Snow-covered.
+## Run order
 
 ```bash
-# Requires Kaggle CLI credentials (~/.kaggle/kaggle.json)
-kaggle datasets download -d alicjalena/pv-panel-defect-dataset -p dataset/raw --unzip
-PYTHONPATH=. python scripts/prepare_pv_dataset.py
-PYTHONPATH=. python scripts/build_semantic_memory.py
+make data           # datasets
+make train          # training/train_condition_classifier.py → models/condition_classifier.pt
+make eval           # training/evaluate.py → reports/eval/summary.md
+make memory         # migrate legacy JSON store, seed users, build simulated history site
+make cloud          # cloud service on 127.0.0.1:8100   (terminal 1)
+make api            # API on 127.0.0.1:8000             (terminal 2)
+make web            # UI on http://localhost:5173       (terminal 3)
 ```
 
-See `dataset/README.md` for class mappings, subset rationale, and **Simulated Multi-Mission History** limitations.
+`make memory` runs `scripts/seed_users.py`, which creates `admin`, `operator`,
+`maintenance` and the cloud `sync` user. Passwords come from `AUDI_<ROLE>_PASSWORD` if set.
+Otherwise they are generated into `data/credentials.env` (mode 600, never printed), so read
+them from that file. The JWT secret comes from `AUDI_JWT_SECRET` or is generated into
+`data/.jwt_secret`. CORS allows only `api.cors_origins`.
 
-## Running Backend
+Checks: `make test` (pytest), `make bench` (NFR benchmarks → `reports/bench.md`) and
+`make smoke`. The smoke test starts cloud and API on free ports with throw-away databases,
+flies two missions from video files through the live pipeline, and checks briefing,
+alerts, report, escalation and sync.
 
-```bash
-cd AUDI
-source .venv/bin/activate
-PYTHONPATH=. python run_api.py
-# API: http://localhost:8000
-# Docs: http://localhost:8000/docs
-```
+## Live demo script
 
-**API Endpoints:**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/summary` | Dashboard summary |
-| GET | `/api/assets` | List all assets |
-| GET | `/api/assets/{id}` | Asset details |
-| GET | `/api/assets/{id}/history` | Observation history + severity trend |
-| GET | `/api/memory/search?q=` | Search semantic memory |
-| POST | `/api/analyze` | Upload image for analysis |
-| POST | `/api/simulate-mission` | Run simulated inspection mission |
+1. **Prepare.** Print an ArUco marker from `DICT_4X4_50` (any id) and tape it to a desk
+   object, for example a box. Set `camera.source` (see Camera). For a single object filling
+   the view, set `detection.mode: full_frame` and `detection.full_frame_asset_type` to the
+   type to score it as (`machinery` suits most desk objects). With YOLO-World, use the
+   configured prompts.
+2. **Start services.** `make cloud`, `make api`, `make web`. Sign in as **admin**, then in
+   *Sites* create a site and subscribe the maintenance user. In *Config*, show that
+   criticality and weights are editable and versioned.
+3. **Mission 1.** Sign in as **operator** → *Sites* → pick the site → *Briefing* (empty on the
+   first flight) → *Start flight*. Show the object to the camera. The edge-bar overlay shows
+   the box, a new asset id and its condition, and the status bar shows fps and latency. Press
+   *End session*; the report lists the new assets.
+4. **Mission 2.** Draw a "crack" on the object with a marker, or add tape or dust. Open
+   *Briefing*: the asset is listed with its revisit priority. Start the flight and show the
+   object. The marker re-identifies it, a change alert appears at the screen edge with a
+   beep, and a critical alert also shows a red border. End the session and download the PDF
+   report.
+5. **Escalation.** Sign in as **maintenance**. The inbox shows the escalation (pushed live).
+   Open the defect, move it to *In Progress*, and show the asset timeline, severity trend,
+   image history and change heatmap.
+6. **Offline.** Stop `make cloud`, then start a session: it starts offline within the
+   10 s bound. Restart the cloud; the outbox flushes (admin → *Metrics* / sync status).
 
-## Running Frontend
+## Accuracy (from `reports/eval/summary.md`)
 
-```bash
-cd AUDI/frontend
-npm install
-npm run dev
-# Open http://localhost:5173
-```
+Test split, n = 1731, backbone DINOv2 ViT-S/14. *Baseline* is the previous approach,
+nearest-neighbour label copy from training embeddings. *Classifier* is the trained
+per-asset-type heads. *Webcam* means each test image was degraded once (blur, JPEG,
+colour cast, perspective, crop).
 
-The dashboard includes: **Dashboard**, **Assets**, **Live Analysis**, **Mission History**, **Semantic Memory**.
+| model | accuracy (clean) | macro-F1 (clean) | accuracy (webcam) | macro-F1 (webcam) |
+|---|---|---|---|---|
+| baseline | 0.929 | 0.873 | 0.908 | 0.857 |
+| classifier | **0.947** | **0.921** | **0.945** | **0.933** |
 
-All values are fetched from the backend API — no hardcoded data.
+| asset type | baseline macro-F1 | classifier macro-F1 | classifier defect recall | classifier false-alarm rate |
+|---|---|---|---|---|
+| solar_panel | 0.666 | 0.809 | 0.923 | 0.148 |
+| building | 0.898 | 0.931 | 0.947 | 0.084 |
+| utility_pole | 0.996 | 0.998 | 0.996 | 0.000 |
+| machinery | 0.933 | 0.945 | 0.974 | 0.117 (baseline 0.058) |
 
-## Demo — Simulated Multi-Mission Inspection
+## Latency (from `reports/bench.md`, Apple M4, MPS)
 
-1. Open http://localhost:5173
-2. **Dashboard** shows 356 assets, defect counts, priority list
-3. **Assets** → click an asset with simulated history (e.g. search `asset_efc116ea`)
-4. View **Observation Timeline** with severity trend chart
-5. **Live Analysis** → upload a PV panel image → see match/change/severity
-6. **Mission History** → click **Simulate Mission** → processes 8 images, updates memory
-7. Refresh page — assets and history persist in `data/pv_semantic_memory.json`
-
-**Research Demonstration:** Kaggle images provide realistic defect examples. Multi-mission histories are **simulated** — not real longitudinal drone data.
-
-## Demo vs Real Data
-
-| | Demo/Synthetic | Real Training Data |
+| requirement | measured | target |
 |---|---|---|
-| Source | `generate_demo_dataset.py` | Drone inspection images |
-| Purpose | Pipeline testing | Production fine-tuning |
-| Accuracy | **Not production accurate** | Requires labeled dataset |
+| NFR-1 alert latency, capture → alert, recorded video | p95 127.4 ms (p50 98.3, n = 12) | ≤ 500 ms |
+| NFR-2 identity cascade @ 5,000 assets, after session-start prefetch | p95 32.3 ms (p50 9.7) | ≤ 50 ms |
+| NFR-2, cold feature cache | p95 32.4 ms | ≤ 50 ms |
+| NFR-3 worst start/end sync (cloud down / black-holed / slow / healthy) | 10.03 s, then offline | ≤ 10 s |
 
-## Configuration
+## Limitations
 
-Edit `config.yaml` for all parameters:
-
-```yaml
-matching:
-  similarity_threshold: 0.75
-severity:
-  w1: 0.6
-  w2: 0.4
-  priority_threshold: 0.5
-runtime:
-  frame_skip: 5
-```
-
-## Optional Fine-Tuning
-
-Requires **real** labeled data (not synthetic demo):
-
-```bash
-python training/train_embedding_model.py \
-  --data dataset \
-  --epochs 10 \
-  --batch-size 16 \
-  --lr 1e-4
-```
-
-The pretrained model works without fine-tuning.
-
-## Real-Time Considerations
-
-- Models loaded once at engine initialization
-- Configurable frame skipping (`runtime.frame_skip`)
-- GPU auto-detection (CUDA if available)
-- Timing metrics exposed: `embedding_latency_ms`, `matching_latency_ms`, `total_processing_latency_ms`
-- Errors logged without crashing the inspection pipeline
-
-## Testing
-
-```bash
-pytest tests/ -v
-```
-
-Tests cover: embedding normalization, similarity, matching thresholds, memory persistence, change detection bounds, severity/revisit formulas, and end-to-end multi-observation flow.
-
-## License
-
-Part of the AUDI drone inspection system. No autonomous drone control is implemented in this module.
+- **Re-identification of heavily damaged, low-texture surfaces.** On the recorded-video
+  bench, plain concrete walls with a large synthetic crack (half the image) were
+  re-identified as the same asset in only 4 of 12 cases. In the end-to-end smoke test, where
+  the references were also captured from video, it was 8 of 12. Plain concrete has too few
+  SIFT keypoints for geometric verification, and a large crack lowers the global embedding
+  similarity below the visual-only bar. The failed cases are registered as new assets but
+  still alert, because the classifier sees the crack. Tag such assets with an ArUco marker,
+  which the cascade checks first. Textured assets (panels, insulators, machinery) verify
+  geometrically.
+- **The re-identification evidence on real objects needs your camera.** Run
+  `scripts/capture_reid_set.py` and then `training/evaluate_reid.py` (see `PROGRESS.md`,
+  "Run on your machine"). The simulated mission histories (`make memory`) only exercise the
+  pipeline; they live in their own `site_simulated` site and are labelled as simulated in
+  the UI.
+- **Classifier weak spots:** machinery false alarms are higher than the baseline's (0.117 vs
+  0.058; MVTec "anomaly" precision 0.63), and solar `physical_damage` F1 is 0.47 with only 67
+  images in total.
+- **NFR-1 was measured on a 12-asset recorded video** with full-frame detection.
+  With YOLO-World on the live camera, the detector adds its own time. Run
+  `python scripts/bench.py --source <camera>` to measure on your hardware.
+- FAISS is opt-in only. On macOS the torch and faiss-cpu wheels load conflicting OpenMP
+  runtimes.
+- Escalation e-mail is sent only when the `AUDI_SMTP_*` variables are set; in-app and
+  WebSocket notifications always work.

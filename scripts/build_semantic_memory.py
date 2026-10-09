@@ -1,167 +1,138 @@
 #!/usr/bin/env python3
-"""
-Build AUDI semantic memory from the prepared PV panel dataset.
+"""Build a SIMULATED inspection history through the real pipeline (D5).
 
-Constructs SIMULATED MULTI-MISSION HISTORIES for demo assets using the
-existing SemanticMemoryEngine pipeline (embedding → match → change → severity).
+For each asset type, `memory_build.assets_per_type` test-split images that the
+dataset labels `normal` become simulated physical assets. Each mission is a
+real session (MissionService start → observe → end, so FR-4/FR-18/FR-20 run)
+marked `simulated`. Every mission re-photographs the SAME image through the
+webcam degradation model (new viewpoint, blur, colour cast); from
+`damage_from_mission` on, a fraction of assets gets a progressively stronger
+synthetic crack or soiling overlay. Identity, change, severity, defects and
+revisit priority are all computed by the system — nothing is hard-coded.
+
+This is demonstration data, not evidence: re-ID accuracy must come from real
+repeated views (scripts/capture_reid_set.py + training/evaluate_reid.py).
+
+Usage: python scripts/build_semantic_memory.py [--reset]
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
+import random
 import sys
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from collections import Counter
+from datetime import timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from memory.local_store import LocalSemanticMemoryStore
-from ml.condition_mapping import map_pv_class
-from ml.config import load_config
-from ml.semantic_memory import SemanticMemoryEngine, register_new_asset, update_existing_asset
-from ml.schemas import Location
+from PIL import Image  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-logger = logging.getLogger("build_memory")
+from api.services import build_services  # noqa: E402
+from memory import db  # noqa: E402
+from ml.augment import WebcamAugment  # noqa: E402
+from ml.config import ROOT as CFG_ROOT, cfg, load_config  # noqa: E402
+from ml.detector import FullFrameDetector  # noqa: E402
+from ml.schemas import utc_now  # noqa: E402
+from ml.synthetic import apply_defect  # noqa: E402
+from training.common import load_manifest  # noqa: E402
 
+logger = logging.getLogger("build_semantic_memory")
 
-def load_metadata(path: Path) -> list[dict]:
-    with open(path, newline="", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
-
-
-def group_by_asset(rows: list[dict]) -> dict[str, list[dict]]:
-    grouped: dict[str, list[dict]] = defaultdict(list)
-    for row in rows:
-        grouped[row["asset_id"]].append(row)
-    for aid in grouped:
-        grouped[aid].sort(key=lambda r: r.get("mission_id", ""))
-    return grouped
+DEFECT_KIND = {"solar_panel": "soiling", "building": "crack", "utility_pole": "crack", "machinery": "crack"}
 
 
-def mission_timestamp(mission_id: str, base: datetime) -> str:
-    num = int(mission_id.split("_")[-1]) if "_" in mission_id else 1
-    return (base + timedelta(days=7 * (num - 1))).isoformat()
+def reset_site(store, site_id: str) -> int:
+    """Delete a previous simulated build of this site (only simulated sessions/assets)."""
+    with store.txn() as s:
+        assets = list(s.scalars(select(db.Asset).where(db.Asset.site_id == site_id, db.Asset.simulated.is_(True))))
+        for a in assets:
+            s.delete(a)
+        for sess in s.scalars(select(db.Session).where(db.Session.site_id == site_id, db.Session.simulated.is_(True))):
+            for o in s.scalars(select(db.Observation).where(db.Observation.session_id == sess.session_id)):
+                s.delete(o)
+            s.delete(sess)
+    return len(assets)
 
 
-def build_memory(
-    metadata_path: Path,
-    store_path: Path,
-    config_path: Path | None = None,
-) -> SemanticMemoryEngine:
-    if config_path:
-        import os
-        os.environ["AUDI_CONFIG"] = str(config_path)
-
-    config = load_config(reload=True)
-    if store_path.exists():
-        store_path.unlink()
-
-    store = LocalSemanticMemoryStore(store_path=store_path, config=config)
-    engine = SemanticMemoryEngine(store=store, config=config)
-
-    rows = load_metadata(metadata_path)
-    grouped = group_by_asset(rows)
-    base_time = datetime(2026, 2, 1, 9, 0, 0, tzinfo=timezone.utc)
-
-    logger.info("Building semantic memory for %d demo assets", len(grouped))
-
-    demo_to_real: dict[str, str] = {}
-
-    for asset_id, observations in grouped.items():
-        is_simulated = any(r.get("simulated_history") == "true" for r in observations)
-        label = "SIMULATED MULTI-MISSION HISTORY" if is_simulated else "DEMO ASSET"
-        logger.info("Processing %s (%s) — %d observations", asset_id, label, len(observations))
-
-        lat = 37.0 + hash(asset_id) % 100 / 1000
-        lon = -122.0 + hash(asset_id) % 100 / 1000
-        location = Location(latitude=lat, longitude=lon, altitude=45.0)
-
-        for i, obs_row in enumerate(observations):
-            img_path = ROOT / "dataset" / obs_row["image_path"]
-            if not img_path.exists():
-                logger.warning("Image not found: %s", img_path)
-                continue
-
-            cls = obs_row["class"]
-            mapped = map_pv_class(cls)
-            ts = mission_timestamp(obs_row["mission_id"], base_time)
-
-            if i == 0 or asset_id not in demo_to_real:
-                embedding = engine.encoder.encode_asset(str(img_path))
-                result = register_new_asset(
-                    image=str(img_path),
-                    asset_type="solar_panel",
-                    location=location,
-                    timestamp=ts,
-                    store=store,
-                    encoder=engine.encoder,
-                    config=config,
-                    embedding=embedding,
-                    condition=mapped["condition_description"],
-                    image_reference=str(obs_row["image_path"]),
-                )
-                demo_to_real[asset_id] = result["asset_id"]
-            else:
-                real_id = demo_to_real[asset_id]
-                embedding = engine.encoder.encode_asset(str(img_path))
-                result = update_existing_asset(
-                    asset_id=real_id,
-                    image=str(img_path),
-                    condition=mapped["condition_description"],
-                    location=location,
-                    timestamp=ts,
-                    store=store,
-                    encoder=engine.encoder,
-                    change_detector=engine.change_detector,
-                    config=config,
-                    embedding=embedding,
-                    image_reference=str(obs_row["image_path"]),
-                    match_confidence=0.95,
-                )
-
-            stored = store.get_asset(demo_to_real[asset_id])
-            if stored and stored.get("observations"):
-                last = stored["observations"][-1]
-                last["mission_id"] = obs_row["mission_id"]
-                last["source_class"] = cls
-                last["metadata"] = {
-                    "demo_asset": True,
-                    "simulated_history": obs_row.get("simulated_history") == "true",
-                    "note": obs_row.get("note", ""),
-                    "original_asset_id": asset_id,
-                }
-                if cls not in stored.get("defect_list", []) and mapped["defect_category"] != "none":
-                    stored.setdefault("defect_list", []).append(mapped["defect_category"])
-                stored.setdefault("metadata", {}).update({
-                    "demo_asset": True,
-                    "demo_asset_id": asset_id,
-                    "simulated_history": is_simulated,
-                    "research_demonstration": True,
-                })
-                store.save_asset(stored)
-
-    logger.info("Semantic memory built: %d assets", len(engine.get_memory_state()))
-    return engine
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Build semantic memory from PV dataset")
-    parser.add_argument("--metadata", type=str, default="dataset/small/metadata.csv")
-    parser.add_argument("--output", type=str, default="data/pv_semantic_memory.json")
-    parser.add_argument("--config", type=str, default=None)
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--reset", action="store_true", help="remove a previous simulated build of the site first")
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    build_memory(
-        metadata_path=ROOT / args.metadata,
-        store_path=ROOT / args.output,
-        config_path=ROOT / args.config if args.config else None,
+    config = load_config(args.config)
+    mb = cfg(config, "memory_build")
+    rng = random.Random(int(mb["seed"]))
+    services = build_services(
+        config,
+        detector=FullFrameDetector(cfg(config, "detection", "full_frame_asset_type"), float(cfg(config, "detection", "full_frame_confidence"))),
+        use_cloud=False,
     )
-    print(f"Memory saved to {ROOT / args.output}")
+    store, engine, mission = services.store, services.engine, services.mission
+    site_id = mb["site_id"]
+    store.ensure_site(site_id, mb["site_name"])
+    if args.reset:
+        n = reset_site(store, site_id)
+        engine.reload_index()
+        logger.info("removed %d simulated assets from %s", n, site_id)
+
+    rows = load_manifest(config)
+    view = WebcamAugment(mb["view_augment"])
+    assets = []
+    for asset_type in services.classifier.label_maps:
+        pool = [r for r in rows if r.split == "test" and r.asset_type == asset_type and r.condition == "normal"]
+        rng.shuffle(pool)
+        for r in pool[: int(mb["assets_per_type"])]:
+            with Image.open(CFG_ROOT / r.path) as im:
+                base = im.convert("RGB")
+            assets.append({
+                "asset_type": asset_type, "image": base, "source": r.path,
+                "damaged": rng.random() < float(mb["damaged_fraction"]), "seed": rng.randrange(1 << 30),
+            })
+    logger.info("%d simulated assets (%s)", len(assets), dict(Counter(a["asset_type"] for a in assets)))
+
+    n_missions = int(mb["missions"])
+    start = utc_now() - timedelta(days=int(mb["days_between_missions"]) * n_missions)
+    stats = Counter()
+    for m in range(n_missions):
+        mission_ts = start + timedelta(days=int(mb["days_between_missions"]) * m)
+        started = mission.start(site_id, "simulator", simulated=True)
+        sid = started["session"]["session_id"]
+        store.update_session(sid, started_ts=mission_ts.isoformat(), mission_date=mission_ts.date().isoformat())
+        for i, a in enumerate(assets):
+            img = view(a["image"], random.Random(a["seed"] + 7919 * m))
+            note = "re-photographed (simulated viewpoint)"
+            if a["damaged"] and m >= int(mb["damage_from_mission"]):
+                steps = m - int(mb["damage_from_mission"]) + 1
+                strength = min(float(mb["damage_max"]), float(mb["damage_step"]) * steps)
+                img, note = apply_defect(img, DEFECT_KIND[a["asset_type"]], random.Random(a["seed"]), strength)
+            ts = (mission_ts + timedelta(minutes=i)).isoformat()
+            ev = engine.observe(img, a["asset_type"], sid, persist=True, timestamp=ts)
+            if ev.type == "error":
+                logger.error("mission %d asset %d: %s", m + 1, i, ev.error)
+                stats["errors"] += 1
+                continue
+            stats[ev.type] += 1
+            if ev.asset_id and ev.persisted:
+                with store.txn() as s:
+                    obs = s.get(db.Observation, ev.observation_id)
+                    obs.simulated = True
+                    obs.meta = {**(obs.meta or {}), "simulated": True, "simulation_note": note, "source_image": a["source"]}
+                    asset = s.get(db.Asset, ev.asset_id)
+                    asset.simulated = True
+        report = mission.end(sid)
+        store.update_session(sid, ended_ts=(mission_ts + timedelta(hours=1)).isoformat())
+        logger.info("mission %d/%d (%s): %s", m + 1, n_missions, sid, report["counts"])
+
+    summary = store.summary(site_id)
+    logger.info("done — events %s; site summary %s", dict(stats), summary)
+    print(f"Simulated history built in site '{site_id}' (all sessions/assets flagged simulated): {dict(stats)} | {summary}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,174 @@
+{
+  "env": {
+    "ts": "2026-10-08T21:21:12.207539+00:00",
+    "platform": "Darwin arm64 \u00b7 Python 3.11.14",
+    "device": "mps",
+    "backbone": "dinov2_vits14"
+  },
+  "nfr2": {
+    "assets": 5000,
+    "prototypes": 5000,
+    "backend": "numpy",
+    "cold": {
+      "pass": "cold: no reference keypoints cached",
+      "n": 200,
+      "p50_ms": 12.449478992493823,
+      "p95_ms": 32.39342050655978,
+      "search_p50_ms": 0.203957999474369,
+      "search_p95_ms": 0.22853336995467538,
+      "top1": 0.845,
+      "false_new": 0.13,
+      "stages": {
+        "geometric": 168,
+        "new": 26,
+        "visual_only": 6
+      }
+    },
+    "prefetched": {
+      "pass": "after session-start prefetch (2048 of 5000 references, 42% of queried assets covered)",
+      "n": 200,
+      "p50_ms": 9.668020997196436,
+      "p95_ms": 32.305307702335995,
+      "search_p50_ms": 0.1982079993467778,
+      "search_p95_ms": 0.23092501069186253,
+      "top1": 0.845,
+      "false_new": 0.13,
+      "stages": {
+        "geometric": 168,
+        "new": 26,
+        "visual_only": 6
+      }
+    },
+    "warm": {
+      "pass": "warm: every queried reference cached",
+      "n": 200,
+      "p50_ms": 4.691875001299195,
+      "p95_ms": 17.125785099051427,
+      "search_p50_ms": 0.17716649745125324,
+      "search_p95_ms": 0.21392645576270297,
+      "top1": 0.845,
+      "false_new": 0.13,
+      "stages": {
+        "geometric": 168,
+        "new": 26,
+        "visual_only": 6
+      }
+    },
+    "prefetch_s": 11.346737250016304,
+    "prefetch_budget": 2048
+  },
+  "nfr1": {
+    "label": "recorded video: 12 building assets, second flight with synthetic cracks",
+    "counters": {
+      "seen": 359,
+      "processed": 12,
+      "skipped_frame_skip": 180,
+      "skipped_duplicate": 167,
+      "events": 12,
+      "alerts": 12,
+      "errors": 0
+    },
+    "latency": {
+      "frame_total": {
+        "p50": 95.8623750047991,
+        "p95": 125.20267919026081,
+        "n": 12
+      },
+      "capture_to_result": {
+        "p50": 98.23297899856698,
+        "p95": 127.30489533278158,
+        "n": 12
+      },
+      "classify": {
+        "p50": 0.2834579936461523,
+        "p95": 0.3658021421870217,
+        "n": 12
+      },
+      "identity": {
+        "p50": 39.87760451855138,
+        "p95": 49.98698530544061,
+        "n": 12
+      },
+      "change": {
+        "p50": 0.03289600135758519,
+        "p95": 31.814091146225106,
+        "n": 12
+      },
+      "store": {
+        "p50": 3.6518124979920685,
+        "p95": 8.915776910725981,
+        "n": 12
+      },
+      "total": {
+        "p50": 50.459521007724106,
+        "p95": 81.80875405232655,
+        "n": 12
+      },
+      "detect": {
+        "p50": 0.010938005289062858,
+        "p95": 0.015218749467749147,
+        "n": 12
+      },
+      "embed_batch": {
+        "p50": 43.78210399590898,
+        "p95": 49.01988574565621,
+        "n": 12
+      },
+      "alert": {
+        "p50": 98.34014550142456,
+        "p95": 127.41942064167232,
+        "n": 12
+      }
+    },
+    "event_types": {
+      "new_asset": 8,
+      "change": 4
+    },
+    "alert_p50_ms": 98.34014550142456,
+    "alert_p95_ms": 127.41942064167232,
+    "alerts": 12,
+    "alert_levels": [
+      "critical",
+      "priority"
+    ],
+    "flagged_in_report": 12,
+    "capture_fps": 14.967830452362648
+  },
+  "nfr3": {
+    "timeout_s": 10.0,
+    "scenarios": [
+      {
+        "scenario": "cloud down (connection refused)",
+        "start_s": 0.018524334009271115,
+        "end_s": 0.006189583975356072,
+        "mode": "offline",
+        "start_timed_out": false,
+        "end_online": false
+      },
+      {
+        "scenario": "cloud black-holed (no response)",
+        "start_s": 2.015925709012663,
+        "end_s": 2.0181069579848554,
+        "mode": "offline",
+        "start_timed_out": false,
+        "end_online": false
+      },
+      {
+        "scenario": "cloud slow (pull/push stall 30 s)",
+        "start_s": 10.027402541978518,
+        "end_s": 10.033140582992928,
+        "mode": "offline",
+        "start_timed_out": true,
+        "end_online": false
+      },
+      {
+        "scenario": "cloud healthy",
+        "start_s": 0.21505400000023656,
+        "end_s": 0.011982916010310873,
+        "mode": "online",
+        "start_timed_out": false,
+        "end_online": true
+      }
+    ]
+  }
+}

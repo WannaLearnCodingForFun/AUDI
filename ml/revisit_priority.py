@@ -1,108 +1,63 @@
-"""Revisit priority scoring per AUDI SRS specification."""
+"""Revisit priority, SRS §8.2 with the amendments in docs/SRS_AMENDMENTS.md.
+
+R = w3·Sr + w4·T + w5·D
+  Sr latest severity of the asset.
+  T  severity trend over the last N missions (revisit_priority.trend_window):
+     least-squares slope of per-mission severity (severity per mission index)
+     multiplied by (n − 1), i.e. the fitted rise across the window, clipped to
+     [0, 1]. Falling or flat trends give 0 (D15).
+  D  min(1, days since last inspection / max_days_since_inspection), evaluated
+     at query time ("now"), so it keeps growing between missions (D9).
+"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
-from ml.config import get_nested, load_config
-
-
-def _parse_ts(ts: str) -> datetime:
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+from ml.config import cfg
 
 
-def calculate_trend(severity_scores: Sequence[float]) -> float:
-    """
-    Estimate historical severity trend rate T in [0, 1].
+def parse_ts(ts: str | datetime) -> datetime:
+    dt = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
-    Uses simple linear slope normalized by number of observations.
-    """
-    if len(severity_scores) < 2:
-        return 0.0
 
-    scores = list(severity_scores)
+def calculate_trend(mission_severities: Sequence[float], window: int) -> float:
+    scores = [float(s) for s in mission_severities][-window:]
     n = len(scores)
+    if n < 2:
+        return 0.0
     x_mean = (n - 1) / 2.0
     y_mean = sum(scores) / n
-    numerator = sum((i - x_mean) * (scores[i] - y_mean) for i in range(n))
-    denominator = sum((i - x_mean) ** 2 for i in range(n)) or 1.0
-    slope = numerator / denominator
-    return float(max(0.0, min(1.0, slope * n)))
+    num = sum((i - x_mean) * (y - y_mean) for i, y in enumerate(scores))
+    den = sum((i - x_mean) ** 2 for i in range(n))
+    slope = num / den
+    return max(0.0, min(1.0, slope * (n - 1)))
 
 
-def days_since_last_inspection(
-    observation_timestamps: Sequence[str],
-    current_timestamp: Optional[str] = None,
-    max_days: float = 30.0,
-) -> float:
-    """
-    Compute normalized time since last inspection D in [0, 1].
-    """
-    if not observation_timestamps:
-        return 0.0
-
-    now = _parse_ts(current_timestamp) if current_timestamp else datetime.now(timezone.utc)
-    last_ts = _parse_ts(observation_timestamps[-1])
-    delta_days = max(0.0, (now - last_ts).total_seconds() / 86400.0)
-    return float(min(1.0, delta_days / max(max_days, 1e-6)))
+def time_decay(last_inspection: Optional[str | datetime], now: Optional[datetime], max_days: float) -> float:
+    if last_inspection is None:
+        return 1.0
+    now = now or datetime.now(timezone.utc)
+    days = max(0.0, (now - parse_ts(last_inspection)).total_seconds() / 86400.0)
+    return min(1.0, days / max_days)
 
 
-def calculate_revisit_priority(
-    recent_severity: float,
-    trend_rate: float,
-    days_since_inspection: float,
-    w3: float | None = None,
-    w4: float | None = None,
-    w5: float | None = None,
-    config: Dict | None = None,
-) -> float:
-    """
-    Compute revisit priority R = w3 * Sr + w4 * T + w5 * D.
-
-    All components normalized to [0, 1].
-    """
-    cfg = config or load_config()
-    if w3 is None:
-        w3 = float(get_nested(cfg, "revisit_priority", "w3", default=0.5))
-    if w4 is None:
-        w4 = float(get_nested(cfg, "revisit_priority", "w4", default=0.3))
-    if w5 is None:
-        w5 = float(get_nested(cfg, "revisit_priority", "w5", default=0.2))
-
-    sr = max(0.0, min(1.0, recent_severity))
-    t = max(0.0, min(1.0, trend_rate))
-    d = max(0.0, min(1.0, days_since_inspection))
-
-    priority = w3 * sr + w4 * t + w5 * d
-    return float(max(0.0, min(1.0, priority)))
-
-
-def compute_revisit_from_history(
-    severity_history: List[float],
-    observation_timestamps: List[str],
-    current_timestamp: Optional[str] = None,
-    config: Dict | None = None,
+def compute_revisit(
+    mission_severities: Sequence[float],
+    last_inspection: Optional[str | datetime],
+    config: Dict,
+    now: Optional[datetime] = None,
 ) -> Dict[str, float]:
-    """Compute revisit priority components from historical severity sequence."""
-    cfg = config or load_config()
-    max_days = float(get_nested(cfg, "revisit_priority", "max_days_since_inspection", default=30.0))
-
-    recent_severity = severity_history[-1] if severity_history else 0.0
-    trend = calculate_trend(severity_history)
-    days_norm = days_since_last_inspection(
-        observation_timestamps[:-1] if len(observation_timestamps) > 1 else observation_timestamps,
-        current_timestamp,
-        max_days,
-    )
-    priority = calculate_revisit_priority(recent_severity, trend, days_norm, config=cfg)
-
+    rp = cfg(config, "revisit_priority")
+    sr = max(0.0, min(1.0, float(mission_severities[-1]) if mission_severities else 0.0))
+    t = calculate_trend(mission_severities, int(rp["trend_window"]))
+    d = time_decay(last_inspection, now, float(rp["max_days_since_inspection"]))
+    r = float(rp["w3"]) * sr + float(rp["w4"]) * t + float(rp["w5"]) * d
     return {
-        "recent_severity": recent_severity,
-        "trend": trend,
-        "days_since_inspection": days_norm,
-        "revisit_priority": priority,
+        "recent_severity": sr,
+        "trend": t,
+        "days_since_inspection": d,
+        "revisit_priority": max(0.0, min(1.0, r)),
     }

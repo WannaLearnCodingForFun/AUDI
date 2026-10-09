@@ -1,37 +1,132 @@
+# AUDI configuration — every threshold, weight, path and camera setting lives here.
+
 model:
-  name: "resnet50"       # use "dinov2" when torch.hub access is available
-  device: "auto"
+  name: "dinov2"                    # dinov2 | resnet50 | projection (offline/test embedder)
+  device: "auto"                    # auto = CUDA → MPS → CPU
   fallback: "resnet50"
-  embedding_dim: 512     # 384 for dinov2_vits14, 2048 for resnet50, 512 for projection fallback
+  hub_repo: "facebookresearch/dinov2"
+  hub_variant: "dinov2_vits14"
+  image_size: 224                   # backbone input; patch grid = image_size / 14 for DINOv2
+  projection_dim: 512               # only used by the projection embedder
+  projection_grid: 8
+  projection_seed: 42
+  # The embedding dimension is derived from the loaded model at runtime (D12).
+
+detection:
+  mode: "yolo_world"                # yolo_world | full_frame (whole frame = one asset, desk demos)
+  weights: "models/yolov8s-worldv2.pt"
+  text_encoder_dir: "models/weights"      # CLIP text encoder used to embed the prompts
+  onnx_export: false                # export to models/*.onnx on first load and run via ONNX
+  confidence: 0.15
+  iou: 0.5
+  image_size: 640
+  max_detections: 8
+  min_box_area_fraction: 0.01
+  full_frame_asset_type: "solar_panel"
+  full_frame_confidence: 1.0        # detector confidence assigned in full_frame mode
+  prompts:
+    solar_panel: ["solar panel"]
+    utility_pole: ["utility pole", "insulator"]
+    building: ["concrete wall", "building facade"]
+    machinery: ["machine part", "metal pipe"]
+
+condition_classifier:
+  checkpoint: "models/condition_classifier.pt"
+  prototype_temperature: 0.02       # softmax temperature of the nearest-neighbour baseline's scores
+  head: "mlp"                       # mlp | linear
+  hidden_dim: 512
+  dropout: 0.2
+  epochs: 60
+  batch_size: 128
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 8                       # early stopping on val macro-F1
+  augment_views: 2                  # augmented feature views cached per training image (frozen stage)
+  feature_batch_size: 64
+  loader_workers: 4                 # image decode / augmentation worker processes
+  metrics_path: "reports/train/condition_classifier_metrics.json"
+  feature_cache_dir: "data/feature_cache"
+  fine_tune_blocks: 2               # >0 = unfreeze the last N transformer blocks after the frozen stage
+  fine_tune_epochs: 4
+  fine_tune_lr: 0.00001
+  fine_tune_head_lr: 0.0001
+  fine_tune_batch_size: 32
+  augment:
+    blur_prob: 0.3
+    blur_sigma_max: 1.5
+    jpeg_prob: 0.5
+    jpeg_quality_min: 35
+    brightness: 0.3
+    contrast: 0.3
+    saturation: 0.2
+    white_balance_shift: 0.08
+    perspective_prob: 0.3
+    perspective_distortion: 0.15
+    hflip_prob: 0.5
+    crop_scale_min: 0.7
 
 matching:
-  similarity_threshold: 0.75
   top_k: 5
+  shortlist_min_similarity: 0.30    # candidates below this global cosine are not geometrically verified
+  visual_only_similarity: 0.93      # accept without geometry only when neither image has enough keypoints
+  location_radius_m: 25.0
+  feature: "sift"                   # sift | orb
+  max_keypoints: 1500
+  min_keypoints: 20
+  lowe_ratio: 0.75
+  ransac_reproj_threshold: 5.0
+  min_inliers: 15
+  min_inlier_ratio: 0.25
+  early_accept_inliers: 60          # a verified candidate with this many inliers ends verification (shortlist is similarity-ordered)
+  verify_max_side: 480              # images resized so the longest side is this many px before SIFT
+  feature_cache_size: 2048          # reference-view keypoint sets kept in memory
+  max_prototypes_per_asset: 8
+  prototype_novelty: 0.08           # add a prototype if its max cosine to existing ones < 1 - novelty
+
+aruco:
+  enabled: true
+  dictionary: "DICT_4X4_50"
+  bbox_margin: 0.15                 # search margin around the bbox, fraction of bbox size
+
+tracker:
+  iou_threshold: 0.3
+  embedding_similarity: 0.8         # same object, consecutive frames: p5 cosine 0.79–0.99 by asset type;
+                                    #     different same-type assets reach 0.6–0.9, hence the second cue:
+  thumbnail_size: 16                # grey thumbnail compared by normalised cross-correlation;
+  thumbnail_ncc: 0.6                #     a track continues only if both gates pass (see PROGRESS.md, NFR-1)
+  max_missed_frames: 15
 
 change_detection:
-  threshold: 0.30
+  threshold: 0.30                   # M below this ⇒ no significant change ⇒ S = 0, asset confirmed
+  alpha: 0.7                        # M = α·a + (1−α)·b
+  condition_l1_weight: 0.5          # a = 0.5·L1(scores) + steps
+  defect_flip_step: 0.5             # added when is_defect flips False → True
+  defect_type_change_step: 0.3      # added when defect_type changes between defects
+  patch_percentile: 95
+  patch_scale: 0.5                  # (P95 − median) patch dissimilarity that maps to b = 1
+  patch_min_coverage: 0.5           # warped-crop coverage a patch needs to be compared
+  heatmap_dir: "data/heatmaps"
+  heatmap_opacity: 0.6
 
 severity:
   w1: 0.6
   w2: 0.4
   priority_threshold: 0.5
+  levels:                           # lower bounds; highest matching level wins
+    low: 0.0
+    medium: 0.3
+    priority: 0.5
+    critical: 0.8
 
 revisit_priority:
   w3: 0.5
   w4: 0.3
   w5: 0.2
   max_days_since_inspection: 30.0
+  trend_window: 5                   # N missions used for the trend slope (D15)
 
-runtime:
-  frame_skip: 5
-  batch_size: 8
-
-logging:
-  level: "INFO"
-
-memory:
-  store_path: "data/pv_semantic_memory.json"
-  vector_backend: "numpy"
+defects:
+  resolution_suggestion_missions: 3 # consecutive normal missions before suggesting resolution
 
 asset_criticality:
   solar_panel: 0.7
@@ -39,3 +134,210 @@ asset_criticality:
   building: 0.6
   machinery: 0.9
   default: 0.5
+
+runtime:
+  frame_skip: 5                     # used by batch / video processing
+  duplicate_frame_mad: 1.5          # mean abs diff (0–255, 64×64 gray) below this ⇒ duplicate frame, skipped
+  duplicate_frame_size: 64
+
+logging:
+  level: "INFO"
+
+storage:
+  db_url: "sqlite:///data/audi_local.db"
+  images_dir: "data/images"
+  legacy_json_store: "data/pv_semantic_memory.json"
+  legacy_site_id: "legacy_import"   # migrated simulated histories live here, never in a real inspection site
+  legacy_site_name: "Legacy JSON import (simulated)"
+  busy_timeout_ms: 5000
+  image_jpeg_quality: 90
+
+memory:
+  vector_backend: "numpy"           # numpy (default) | faiss (opt-in; on macOS the torch and faiss wheels bundle conflicting OpenMP runtimes)
+
+sites:
+  default_site_id: "site_demo"
+  default_site_name: "Demo site"
+
+memory_build:                       # scripts/build_semantic_memory.py — simulated history via the real pipeline
+  site_id: "site_simulated"
+  site_name: "Simulated history (demo data)"
+  assets_per_type: 4
+  missions: 4
+  days_between_missions: 14
+  damaged_fraction: 0.5
+  damage_from_mission: 2            # 0-based mission index where synthetic damage starts
+  damage_step: 0.25                 # crack extent / soiling coverage added per mission
+  damage_max: 0.6
+  seed: 7
+  view_augment:                     # milder than training augmentation: same object, new photo
+    blur_prob: 0.2
+    blur_sigma_max: 0.8
+    jpeg_prob: 0.5
+    jpeg_quality_min: 60
+    brightness: 0.15
+    contrast: 0.15
+    saturation: 0.1
+    white_balance_shift: 0.04
+    perspective_prob: 0.5
+    perspective_distortion: 0.08
+    hflip_prob: 0.0
+    crop_scale_min: 0.9
+
+cloud:
+  enabled: true
+  base_url: "http://127.0.0.1:8100"
+  connect_timeout_s: 2.0
+  sync_timeout_s: 10.0              # NFR-3 hard limit for start/end sync
+  flush_interval_s: 15.0            # background outbox flush cadence (FR-7, §5.3)
+  batch_size: 200
+  username_env: "AUDI_CLOUD_USER"
+  password_env: "AUDI_CLOUD_PASSWORD"
+  server:
+    host: "127.0.0.1"
+    port: 8100
+    db_url: "sqlite:///data/audi_cloud.db"
+    secret_env: "AUDI_CLOUD_JWT_SECRET"
+    secret_file: "data/.cloud_jwt_secret"
+    access_token_minutes: 60
+    ssl_certfile_env: "AUDI_CLOUD_SSL_CERT"   # HTTPS when both cert and key are provided
+    ssl_keyfile_env: "AUDI_CLOUD_SSL_KEY"
+
+auth:
+  algorithm: "HS256"
+  access_token_minutes: 480
+  secret_env: "AUDI_JWT_SECRET"
+  secret_file: "data/.jwt_secret"   # generated (mode 600) when the env var is unset
+  credentials_file: "data/credentials.env"   # generated passwords (mode 600) when env vars are unset
+  generated_password_bytes: 18
+  seed_users:                       # created by scripts/seed_users.py; passwords come from env vars
+    - {username_env: "AUDI_ADMIN_USER", password_env: "AUDI_ADMIN_PASSWORD", default_username: "admin", role: "admin"}
+    - {username_env: "AUDI_OPERATOR_USER", password_env: "AUDI_OPERATOR_PASSWORD", default_username: "operator", role: "operator"}
+    - {username_env: "AUDI_MAINTENANCE_USER", password_env: "AUDI_MAINTENANCE_PASSWORD", default_username: "maintenance", role: "maintenance"}
+    - {username_env: "AUDI_CLOUD_USER", password_env: "AUDI_CLOUD_PASSWORD", default_username: "sync", role: "admin", cloud: true}
+
+api:
+  host: "127.0.0.1"
+  port: 8000
+  cors_origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
+  max_upload_mb: 15
+
+escalation:
+  smtp_host_env: "AUDI_SMTP_HOST"
+  smtp_port_env: "AUDI_SMTP_PORT"
+  smtp_user_env: "AUDI_SMTP_USER"
+  smtp_password_env: "AUDI_SMTP_PASSWORD"
+  smtp_from_env: "AUDI_SMTP_FROM"
+  smtp_timeout_s: 10.0
+
+camera:
+  source: 0                         # int index | device name | rtsp:// / http:// URL | video file path
+  backend: "auto"                   # auto | avfoundation | dshow | msmf | v4l2 | ffmpeg | any
+  width: 1280
+  height: 720
+  fps: 30
+  warmup_frames: 5
+  reconnect_seconds: 2.0
+  frame_skip: 2                     # process every Nth captured frame in the live pipeline
+  loop_video: false                 # restart video files at EOF
+  probe_max_index: 9
+  probe_seconds: 2.0
+
+live:
+  stream_fps: 15
+  jpeg_quality: 80
+  latency_window: 300               # samples kept for p50/p95
+  alert_cooldown_s: 5.0             # per asset, avoids repeated alerts on one track
+  alert_display_s: 30.0             # alerts stay in the overlay side panel this long
+  max_alerts_shown: 6
+  status_interval_s: 1.0            # live status pushed over /ws/live this often
+  frame_wait_s: 0.5                 # pipeline wait for a new frame before re-checking stop
+  max_ws_frame_bytes: 4000000
+  ws_queue_size: 64                 # per WebSocket client; oldest message dropped when full
+  overlay:
+    bar_height: 40
+    side_width: 300
+    box_thickness: 2
+    font_scale: 0.5
+    line_height: 22                 # px between overlay text lines
+    line_gap: 6
+    bracket_fraction: 0.25          # corner bracket length as a fraction of the box side
+    panel_alpha: 0.55               # darkening of the top bar / side panel
+    colors:                         # BGR
+      normal: [80, 200, 80]
+      medium: [0, 200, 255]
+      priority: [0, 140, 255]
+      critical: [0, 0, 255]
+      new: [255, 180, 0]
+
+reports:
+  dir: "reports"
+  eval_dir: "reports/eval"
+
+reid:                               # real repeated-view set (D5): capture_reid_set.py → evaluate_reid.py
+  dir: "data/reid_set"
+  report_dir: "reports/reid"
+  global_threshold: 0.80            # "global embedding only" baseline: top-1 accepted at this cosine
+  capture_interval_s: 1.0           # --auto capture cadence
+  asset_type: "machinery"           # desk objects are enrolled under this type
+
+bench:                              # scripts/bench.py → reports/bench.md
+  targets:
+    alert_p95_ms: 500.0             # NFR-1 capture → alert event
+    matching_p95_ms: 50.0           # NFR-2 identity cascade with 5,000 assets in memory
+    sync_s: 10.0                    # NFR-3 start/end sync bound before proceeding offline
+  sync_margin_s: 1.0                # scheduling slack allowed on top of cloud.sync_timeout_s
+  matching_queries: 200
+  matching_asset_type: "building"   # every synthetic asset is placed in ONE partition (worst case)
+  video_asset_type: "building"
+  video_assets: 12
+  video_fps: 15
+  video_seconds_per_asset: 2.0
+  video_size: [640, 480]
+  crack_extent: 0.5
+  slow_cloud_delay_s: 30.0
+  seed: 11
+
+datasets:
+  max_images_per_class: 1500        # cap after dedupe, per (asset_type, condition)
+  min_images_per_class: 40          # classes below this are merged into a parent class or dropped (log it)
+  split: {train: 0.70, val: 0.15, test: 0.15, seed: 42}
+  phash_hamming_threshold: 4        # near-duplicate threshold for cross-source dedupe
+  prepare:
+    raw_dir: dataset/raw
+    output_dir: dataset/processed
+    image_max_side: 512             # processed classification images are resized to this longest side
+    jpeg_quality: 92
+    crop_padding: 0.08              # fraction of box size added on each side when cropping annotated objects
+    min_crop_side: 32               # annotated boxes smaller than this (px) are skipped
+    mask_tile_size: 224             # segmentation sources are tiled at this size
+    mask_crack_fraction: 0.005      # tile is "crack" when at least this fraction of mask pixels is set
+    candidate_pool_factor: 3        # per (source, class) at most factor × max_images_per_class candidates are hashed
+    detection_val_fraction: 0.15
+    # sources whose defects are tiny on an otherwise identical part (fixed pose): a near-duplicate
+    # hash with a DIFFERENT label inside the same source is a fine-grained defect, not a copy → kept
+    fine_grained_sources: [mvtec_ad]
+    workers: 0                      # 0 = os.cpu_count()
+  sources:
+    # ── Solar panel (RGB) ──
+    - {name: pv_defect,        slug: alicjalena/pv-panel-defect-dataset,                              asset_type: solar_panel}
+    - {name: solar_clean_faulty, slug: pythonafroz/solar-panel-images,                                asset_type: solar_panel}
+    # ── Solar panel (thermal) — webcam is RGB, so off by default ──
+    - {name: pv_infrared,      slug: marcosgabriel/infrared-solar-modules,                             asset_type: solar_panel, enabled: false, optional: true}
+    # ── Building / concrete ──
+    - {name: crack_concrete,   slug: arunrk7/surface-crack-detection,                                  asset_type: building}
+    - {name: sdnet2018,        slug: aniruddhsharma/structural-defects-network-concrete-crack-images,  asset_type: building}
+    - {name: uav_crack,        slug: zara2099/uav-based-crack-detection-image-dataset,                 asset_type: building}
+    # ── Utility pole / power line ──
+    - {name: cplid_insulator,  slug: mingyeiu/insulator-chinese-power-line-insulator-dataset,          asset_type: utility_pole}
+    - {name: powerline_parts,  slug: abdulbasit89/power-line-components-images-dataset,                asset_type: utility_pole}
+    - {name: epri_distribution, slug: dexterlewis/epri-distribution-inspection-imagery,                asset_type: utility_pole, optional: true}
+    # ── Machinery / metal ──
+    - {name: neu_steel,        slug: kaustubhdikshit/neu-surface-defect-database,                      asset_type: machinery}
+    # upstream holds only 5 images (verified via the Kaggle file listing) → replaced by the two YOLO-labelled sets below
+    - {name: corrosion,        slug: shreyaspoharkar/corrosion-and-noncorrosion-dataset,               asset_type: machinery, enabled: false}
+    - {name: corrosion_detect, slug: wednesday233/corrosion-detect-dataset,                            asset_type: machinery}
+    - {name: corrosion_rustguard, slug: ananyagogi/corrosion-metal-rustguard,                          asset_type: machinery}
+    # only source of defect-free machinery images; full archive (~5 GB) is downloaded, then pruned to these categories
+    # (per-file downloads hit Kaggle's 429 rate limit)
+    - {name: mvtec_ad,         slug: ipythonx/mvtec-ad,                                                asset_type: machinery, categories: [metal_nut, screw, cable, grid], exclude_dirs: [ground_truth]}

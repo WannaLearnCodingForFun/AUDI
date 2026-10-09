@@ -1,0 +1,521 @@
+{
+  "backbone": "dinov2_vits14",
+  "embedding_dim": 384,
+  "head": "mlp",
+  "hidden_dim": 512,
+  "dropout": 0.2,
+  "fine_tune_blocks": 0,
+  "manifest": "d0df8375bfb5",
+  "trained_at": "2026-10-08T20:56:12.150023+00:00",
+  "val_macro_f1": 0.9397126869008962,
+  "checkpoint": "models/condition_classifier.pt",
+  "label_maps": {
+    "solar_panel": [
+      "normal",
+      "soiling",
+      "bird_drop",
+      "electrical_damage",
+      "physical_damage",
+      "snow_cover"
+    ],
+    "building": [
+      "normal",
+      "crack"
+    ],
+    "utility_pole": [
+      "normal",
+      "insulator_defect"
+    ],
+    "machinery": [
+      "normal",
+      "crack",
+      "inclusion",
+      "patches",
+      "pitted_surface",
+      "rolled_in_scale",
+      "scratches",
+      "corrosion",
+      "anomaly"
+    ]
+  },
+  "counts": {
+    "solar_panel": {
+      "test:bird_drop": 20,
+      "train:bird_drop": 92,
+      "val:bird_drop": 20,
+      "train:electrical_damage": 59,
+      "val:electrical_damage": 12,
+      "test:electrical_damage": 12,
+      "test:normal": 27,
+      "val:normal": 27,
+      "train:normal": 126,
+      "train:physical_damage": 47,
+      "test:physical_damage": 10,
+      "val:physical_damage": 10,
+      "train:snow_cover": 101,
+      "test:snow_cover": 22,
+      "val:snow_cover": 22,
+      "train:soiling": 125,
+      "val:soiling": 27,
+      "test:soiling": 27
+    },
+    "building": {
+      "val:crack": 225,
+      "train:crack": 1050,
+      "test:crack": 225,
+      "train:normal": 1050,
+      "test:normal": 225,
+      "val:normal": 225
+    },
+    "utility_pole": {
+      "val:insulator_defect": 225,
+      "train:insulator_defect": 1050,
+      "test:insulator_defect": 225,
+      "train:normal": 1050,
+      "test:normal": 225,
+      "val:normal": 225
+    },
+    "machinery": {
+      "test:anomaly": 39,
+      "train:anomaly": 181,
+      "val:anomaly": 39,
+      "train:corrosion": 1050,
+      "test:corrosion": 225,
+      "val:corrosion": 225,
+      "train:crack": 210,
+      "test:crack": 45,
+      "val:crack": 45,
+      "test:inclusion": 45,
+      "train:inclusion": 210,
+      "val:inclusion": 45,
+      "train:normal": 801,
+      "val:normal": 171,
+      "test:normal": 171,
+      "test:patches": 45,
+      "train:patches": 209,
+      "val:patches": 45,
+      "train:pitted_surface": 210,
+      "test:pitted_surface": 45,
+      "val:pitted_surface": 45,
+      "train:rolled_in_scale": 210,
+      "val:rolled_in_scale": 45,
+      "test:rolled_in_scale": 45,
+      "train:scratches": 248,
+      "test:scratches": 53,
+      "val:scratches": 53
+    }
+  },
+  "best_epoch": 24,
+  "val_per_type_macro_f1": {
+    "solar_panel": 0.8728272703069813,
+    "building": 0.9310835445289227,
+    "utility_pole": 0.9977777668037867,
+    "machinery": 0.9571621659638941
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.8302464819404017,
+      "val_macro_f1": 0.7534752421623038,
+      "val_per_type": {
+        "solar_panel": 0.29582425562817716,
+        "building": 0.891046007737957,
+        "utility_pole": 0.9733285917496444,
+        "machinery": 0.8537021135334366
+      }
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.31512754381701424,
+      "val_macro_f1": 0.82858933378845,
+      "val_per_type": {
+        "solar_panel": 0.5310720144053477,
+        "building": 0.9154486659678409,
+        "utility_pole": 0.9888883950397795,
+        "machinery": 0.8789482597408319
+      }
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.2552868516922585,
+      "val_macro_f1": 0.8727126853023294,
+      "val_per_type": {
+        "solar_panel": 0.659368247084406,
+        "building": 0.9221572571677104,
+        "utility_pole": 0.9955554677623262,
+        "machinery": 0.9137697691948746
+      }
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.21851363891162592,
+      "val_macro_f1": 0.8663513147514287,
+      "val_per_type": {
+        "solar_panel": 0.6520626278339526,
+        "building": 0.9221357063403781,
+        "utility_pole": 1.0,
+        "machinery": 0.8912069248313839
+      }
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.19339080946771658,
+      "val_macro_f1": 0.8923040055926459,
+      "val_per_type": {
+        "solar_panel": 0.714264163007588,
+        "building": 0.9221910986616868,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9349829938975218
+      }
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.17394506819628452,
+      "val_macro_f1": 0.9062815771871789,
+      "val_per_type": {
+        "solar_panel": 0.7597042961941008,
+        "building": 0.9288537549407114,
+        "utility_pole": 1.0,
+        "machinery": 0.9365682576139034
+      }
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.15464142861500088,
+      "val_macro_f1": 0.9091037921447862,
+      "val_per_type": {
+        "solar_panel": 0.7841912171346075,
+        "building": 0.9355552373098139,
+        "utility_pole": 1.0,
+        "machinery": 0.9166687141347233
+      }
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.14692151229754818,
+      "val_macro_f1": 0.9134009893541746,
+      "val_per_type": {
+        "solar_panel": 0.7900997150997151,
+        "building": 0.9311080492466332,
+        "utility_pole": 1.0,
+        "machinery": 0.9323961930703503
+      }
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.13981940341783414,
+      "val_macro_f1": 0.9201327285211429,
+      "val_per_type": {
+        "solar_panel": 0.811453634085213,
+        "building": 0.9377581062656839,
+        "utility_pole": 1.0,
+        "machinery": 0.9313191737336746
+      }
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.1305911041968431,
+      "val_macro_f1": 0.9206265205687607,
+      "val_per_type": {
+        "solar_panel": 0.807868664774019,
+        "building": 0.9332687440683327,
+        "utility_pole": 1.0,
+        "machinery": 0.941368673432691
+      }
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.12156012289701726,
+      "val_macro_f1": 0.9254393850237943,
+      "val_per_type": {
+        "solar_panel": 0.8319394935910362,
+        "building": 0.926663407262545,
+        "utility_pole": 1.0,
+        "machinery": 0.9431546392415958
+      }
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.11899804408467798,
+      "val_macro_f1": 0.9188026460048668,
+      "val_per_type": {
+        "solar_panel": 0.8044530937103221,
+        "building": 0.928883269789218,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9440964537161405
+      }
+    },
+    {
+      "epoch": 13,
+      "train_loss": 0.11387949852238208,
+      "val_macro_f1": 0.9235323781502389,
+      "val_per_type": {
+        "solar_panel": 0.8285029785029785,
+        "building": 0.9265850945494994,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9412636727446907
+      }
+    },
+    {
+      "epoch": 14,
+      "train_loss": 0.11304024622078995,
+      "val_macro_f1": 0.9225900873308343,
+      "val_per_type": {
+        "solar_panel": 0.8270107186622613,
+        "building": 0.9197717953289357,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9458000685283535
+      }
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.10776020852457638,
+      "val_macro_f1": 0.9197217467273375,
+      "val_per_type": {
+        "solar_panel": 0.8199526594263435,
+        "building": 0.9177448757280691,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9434116849511507
+      }
+    },
+    {
+      "epoch": 16,
+      "train_loss": 0.1026125705899935,
+      "val_macro_f1": 0.9288451412325192,
+      "val_per_type": {
+        "solar_panel": 0.8510442773600668,
+        "building": 0.9266663045249606,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9398922162412627
+      }
+    },
+    {
+      "epoch": 17,
+      "train_loss": 0.09826018966376628,
+      "val_macro_f1": 0.9131687211036084,
+      "val_per_type": {
+        "solar_panel": 0.8148677248677249,
+        "building": 0.9222187652784568,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9178106274644651
+      }
+    },
+    {
+      "epoch": 18,
+      "train_loss": 0.09936881476886092,
+      "val_macro_f1": 0.9242017417657602,
+      "val_per_type": {
+        "solar_panel": 0.8345254161043635,
+        "building": 0.9221757198128264,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9423280643420637
+      }
+    },
+    {
+      "epoch": 19,
+      "train_loss": 0.09788730921206172,
+      "val_macro_f1": 0.925428686479869,
+      "val_per_type": {
+        "solar_panel": 0.836919383529553,
+        "building": 0.910898146681451,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9561194489046851
+      }
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.09386693818942182,
+      "val_macro_f1": 0.9253460576417979,
+      "val_per_type": {
+        "solar_panel": 0.8295700501689613,
+        "building": 0.9199857752489331,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9540506383455103
+      }
+    },
+    {
+      "epoch": 21,
+      "train_loss": 0.09266476232542485,
+      "val_macro_f1": 0.9286200847781363,
+      "val_per_type": {
+        "solar_panel": 0.8549061332576725,
+        "building": 0.9177741232943686,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9440223157567171
+      }
+    },
+    {
+      "epoch": 22,
+      "train_loss": 0.08953015043758035,
+      "val_macro_f1": 0.9301809883464685,
+      "val_per_type": {
+        "solar_panel": 0.8438898171354312,
+        "building": 0.9177741232943686,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9612822461522872
+      }
+    },
+    {
+      "epoch": 23,
+      "train_loss": 0.08905509384633686,
+      "val_macro_f1": 0.9122524039446551,
+      "val_per_type": {
+        "solar_panel": 0.7902602660497396,
+        "building": 0.9132094693167039,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9477621136083904
+      }
+    },
+    {
+      "epoch": 24,
+      "train_loss": 0.08713358052058534,
+      "val_macro_f1": 0.9397126869008962,
+      "val_per_type": {
+        "solar_panel": 0.8728272703069813,
+        "building": 0.9310835445289227,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9571621659638941
+      }
+    },
+    {
+      "epoch": 25,
+      "train_loss": 0.08499125414066905,
+      "val_macro_f1": 0.932908482146473,
+      "val_per_type": {
+        "solar_panel": 0.8596450548909566,
+        "building": 0.9199857752489331,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9542253316422156
+      }
+    },
+    {
+      "epoch": 26,
+      "train_loss": 0.08308077378218126,
+      "val_macro_f1": 0.9271335317110143,
+      "val_per_type": {
+        "solar_panel": 0.8473358150777505,
+        "building": 0.9064430540155235,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9569774909469965
+      }
+    },
+    {
+      "epoch": 27,
+      "train_loss": 0.0829316076513675,
+      "val_macro_f1": 0.9313995017543728,
+      "val_per_type": {
+        "solar_panel": 0.8468895166352793,
+        "building": 0.9222033973652883,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9587273262131364
+      }
+    },
+    {
+      "epoch": 28,
+      "train_loss": 0.08039378238655123,
+      "val_macro_f1": 0.9325856108293694,
+      "val_per_type": {
+        "solar_panel": 0.8539047954142293,
+        "building": 0.9221910986616868,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9564687824377747
+      }
+    },
+    {
+      "epoch": 29,
+      "train_loss": 0.07791873862561198,
+      "val_macro_f1": 0.9341597825849122,
+      "val_per_type": {
+        "solar_panel": 0.866763600215875,
+        "building": 0.9199430706280021,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9521546926919849
+      }
+    },
+    {
+      "epoch": 30,
+      "train_loss": 0.0771466489140529,
+      "val_macro_f1": 0.9383955640758234,
+      "val_per_type": {
+        "solar_panel": 0.8728272703069813,
+        "building": 0.9244444444444444,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9585327747480812
+      }
+    },
+    {
+      "epoch": 31,
+      "train_loss": 0.07379786381955653,
+      "val_macro_f1": 0.9314593200447481,
+      "val_per_type": {
+        "solar_panel": 0.8533146591970121,
+        "building": 0.9177578772147335,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9569869769634598
+      }
+    },
+    {
+      "epoch": 32,
+      "train_loss": 0.0726648125884549,
+      "val_macro_f1": 0.9312283434224036,
+      "val_per_type": {
+        "solar_panel": 0.8523386489488184,
+        "building": 0.9199857752489331,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9548111826880762
+      }
+    }
+  ],
+  "fine_tune_history": [
+    {
+      "epoch": 0,
+      "val_macro_f1": 0.9397126869008962
+    },
+    {
+      "epoch": 1,
+      "train_loss": 0.13998022483667277,
+      "val_macro_f1": 0.9140036671338198,
+      "val_per_type": {
+        "solar_panel": 0.7680537002694039,
+        "building": 0.931069923262789,
+        "utility_pole": 0.9977777668037867,
+        "machinery": 0.9591132781992996
+      }
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.1410164567650974,
+      "val_macro_f1": 0.9120654863678279,
+      "val_per_type": {
+        "solar_panel": 0.8254810004810005,
+        "building": 0.9221757198128264,
+        "utility_pole": 1.0,
+        "machinery": 0.9006052251774849
+      }
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.18504302928225097,
+      "val_macro_f1": 0.9213237526844575,
+      "val_per_type": {
+        "solar_panel": 0.8143745652386657,
+        "building": 0.9198416625432955,
+        "utility_pole": 1.0,
+        "machinery": 0.951078782955869
+      }
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.08863731210057067,
+      "val_macro_f1": 0.9213779184370898,
+      "val_per_type": {
+        "solar_panel": 0.8324448942869996,
+        "building": 0.9220833189043183,
+        "utility_pole": 1.0,
+        "machinery": 0.9309834605570411
+      }
+    }
+  ],
+  "feature_seconds": 320.5,
+  "total_seconds": 1246.5
+}

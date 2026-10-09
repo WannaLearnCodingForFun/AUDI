@@ -1,44 +1,37 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { getSummary } from '../api'
-import SummaryCard from '../components/SummaryCard'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { getAssets, getSites, getSummary } from '../api'
 import AssetTable from '../components/AssetTable'
+import { Card, ErrorBox, Loading, Stat } from '../components/ui'
+import { useAsync } from '../hooks'
 
 export default function Dashboard() {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    getSummary()
-      .then(setData)
-      .catch(e => setError(e.response?.data?.detail || e.message))
-  }, [])
-
-  if (error) return <div className="error-box">API unavailable: {error}</div>
-  if (!data) return <div className="loading">Loading dashboard...</div>
-
-  const priority = data.priority_assets_list || []
+  const sites = useAsync(getSites, [])
+  const [siteId, setSiteId] = useState('')
+  const summary = useAsync(() => getSummary(siteId), [siteId])
+  const assets = useAsync(() => getAssets(siteId), [siteId])
 
   return (
-    <div>
-      <h2 className="page-title">Dashboard</h2>
-      <p className="page-subtitle">Persistent semantic memory overview</p>
-
-      <div className="banner">
-        <strong>Research Demonstration</strong> — Simulated multi-mission histories built on Kaggle PV defect images.
-        Not production drone inspection data.
-      </div>
-
-      <div className="cards">
-        <SummaryCard label="Total Assets" value={data.total_assets} color="var(--accent2)" />
-        <SummaryCard label="Active Defects" value={data.active_defects} color="var(--warning)" />
-        <SummaryCard label="Priority Assets" value={data.priority_assets} color="var(--danger)" />
-        <SummaryCard label="Missions" value={data.missions} />
-      </div>
-
-      <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>Priority Assets</h3>
-      <AssetTable assets={priority} onSelect={id => navigate(`/assets/${id}`)} />
+    <div className="page">
+      <header className="page-head">
+        <h2>Dashboard</h2>
+        <select value={siteId} onChange={(e) => setSiteId(e.target.value)} aria-label="Site">
+          <option value="">All sites</option>
+          {(sites.data || []).map((s) => <option key={s.site_id} value={s.site_id}>{s.name}</option>)}
+        </select>
+      </header>
+      <ErrorBox error={summary.error || assets.error} />
+      {summary.data && (
+        <div className="stats">
+          <Stat label="Assets in memory" value={summary.data.total_assets} />
+          <Stat label="Unresolved defects" value={summary.data.active_defects} tone={summary.data.active_defects ? 'crit' : ''} />
+          <Stat label="Priority assets (latest S above threshold)" value={summary.data.priority_assets} tone={summary.data.priority_assets ? 'warn' : ''} />
+          <Stat label="Missions" value={summary.data.missions} />
+        </div>
+      )}
+      <Card title="Assets by revisit priority" actions={<Link to="/assets">All assets →</Link>}>
+        {assets.loading ? <Loading /> : <AssetTable assets={(assets.data || []).slice(0, 15)} />}
+      </Card>
     </div>
   )
 }

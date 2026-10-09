@@ -1,14 +1,38 @@
+# Core ML
 torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.24.0
 Pillow>=9.5.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+ultralytics>=8.1.0
+imagehash>=4.3.1
+
+# Data acquisition
+kaggle>=1.6.0
+certifi>=2023.7.22
+
+# Config / tests
 PyYAML>=6.0
 pytest>=7.4.0
-matplotlib>=3.7.0
+
+# API, storage, sync
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.9
 pydantic>=2.0.0
+sqlalchemy>=2.0.0
+httpx>=0.25.0
+websockets>=12.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+# passlib 1.7.4 is incompatible with bcrypt>=4.1 (72-byte check raised during backend probe)
+bcrypt>=4.0.1,<4.1
+reportlab>=4.0.0
 
-# Optional scalable vector search (not required for v1)
-# faiss-cpu>=1.7.4
+# Vector index: FAISS is optional; memory/vector_memory.py falls back to NumPy
+# when it is not importable (no wheel on some platforms / Python versions).
+faiss-cpu>=1.7.4; platform_machine != "armv7l"

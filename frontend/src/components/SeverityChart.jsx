@@ -1,29 +1,19 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-export default function SeverityChart({ observations }) {
-  if (!observations?.length) return null
-
-  const data = observations.map((o, i) => ({
-    name: o.mission_id || `M${i + 1}`,
-    severity: o.severity_score ?? 0,
-    change: o.change_magnitude ?? 0,
-  }))
-
+/** points: [{ ts, severity }] ; thresholds: { priority, critical } */
+export default function SeverityChart({ points, thresholds, height = 220 }) {
+  const data = points.map((p) => ({ ...p, label: new Date(p.ts).toLocaleDateString() }))
   return (
-    <div style={{ marginTop: '1.5rem' }}>
-      <h4 style={{ marginBottom: '0.75rem', color: 'var(--muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>
-        Severity Trend
-      </h4>
-      <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#2a3548" />
-          <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-          <YAxis domain={[0, 1]} stroke="#94a3b8" fontSize={12} />
-          <Tooltip contentStyle={{ background: '#111827', border: '1px solid #2a3548' }} />
-          <Line type="monotone" dataKey="severity" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} name="Severity" />
-          <Line type="monotone" dataKey="change" stroke="#06b6d4" strokeWidth={2} dot={{ r: 4 }} name="Change M" strokeDasharray="4 4" />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+        <XAxis dataKey="label" stroke="var(--muted)" fontSize={11} />
+        <YAxis domain={[0, 1]} stroke="var(--muted)" fontSize={11} />
+        <Tooltip contentStyle={{ background: 'var(--surface2)', border: '1px solid var(--border)' }} />
+        {thresholds?.priority !== undefined && <ReferenceLine y={thresholds.priority} stroke="var(--warning)" strokeDasharray="4 4" />}
+        {thresholds?.critical !== undefined && <ReferenceLine y={thresholds.critical} stroke="var(--danger)" strokeDasharray="4 4" />}
+        <Line type="monotone" dataKey="severity" stroke="var(--accent2)" strokeWidth={2} dot={{ r: 3 }} />
+      </LineChart>
+    </ResponsiveContainer>
   )
 }

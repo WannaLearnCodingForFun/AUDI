@@ -1,6 +1,21 @@
-# Dataset images (downloaded from Kaggle — do not commit)
+# Secrets
+kaggle.json
+.env
+*.env
+
+# Datasets, local databases, models (large / regenerated)
 dataset/raw/
+dataset/processed/
 dataset/small/
+data/
+models/
+*.pt
+*.pth
+*.onnx
+
+# Generated reports
+reports/camera_probe/
+reports/reid_set/
 
 # Python
 __pycache__/
@@ -19,9 +34,6 @@ frontend/dist/
 
 # OS
 .DS_Store
-
-# Memory stores (regenerated)
-data/*.json
 
 # Logs
 *.log

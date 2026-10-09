@@ -1,40 +1,62 @@
-"""Tests for change detection."""
+"""Change detector: condition delta, patch-token visual delta, homography warp."""
 
 import numpy as np
 
-from ml.change_detector import ChangeDetector
+from ml.asset_identity import GeometricVerifier
+from ml.change_detector import ConditionVisualChangeDetector, ReferenceCondition
+from ml.condition_classifier import prediction_from_scores
+from tests.conftest import add_crack, make_panel
+
+LABELS = ["normal", "crack"]
+NORMAL_REF = ReferenceCondition("normal", {"normal": 1.0, "crack": 0.0}, False, None)
 
 
-def test_no_history_zero_change():
-    detector = ChangeDetector(threshold=0.30)
-    current = np.array([1.0, 0.0, 0.0])
-    result = detector.compare(current, [])
-    assert result.change_magnitude == 0.0
-    assert result.changed is False
+def _pred(p_normal: float):
+    return prediction_from_scores("solar_panel", LABELS, np.array([p_normal, 1 - p_normal]))
 
 
-def test_identical_low_change():
-    detector = ChangeDetector(threshold=0.30)
-    emb = np.array([0.6, 0.8, 0.0])
-    emb = emb / np.linalg.norm(emb)
-    result = detector.compare(emb, [emb.tolist()])
-    assert result.change_magnitude < 0.1
-    assert result.changed is False
+def test_identical_view_has_zero_change(config, embedder):
+    det = ConditionVisualChangeDetector(config, embedder)
+    img = make_panel(1)
+    res = det.assess(_pred(1.0), NORMAL_REF, img, img, None)
+    assert res.visual_delta < 1e-5
+    assert res.magnitude < 1e-5
+    assert not res.significant
 
 
-def test_different_high_change():
-    detector = ChangeDetector(threshold=0.30)
-    a = np.array([1.0, 0.0, 0.0])
-    b = np.array([0.0, 1.0, 0.0])
-    result = detector.compare(a, [b.tolist()])
-    assert result.change_magnitude > 0.5
-    assert 0.0 <= result.change_magnitude <= 1.0
+def test_synthetic_crack_gives_positive_visual_delta(config, embedder):
+    """Regression: the patch term was clipped to 0 by an absolute floor above the signal."""
+    det = ConditionVisualChangeDetector(config, embedder)
+    ref = make_panel(1)
+    res = det.assess(_pred(1.0), NORMAL_REF, add_crack(ref), ref, None)
+    assert res.visual_delta is not None and res.visual_delta > 0.0
+    assert res.heatmap is not None and res.heatmap.max() > 0.0
 
 
-def test_change_magnitude_bounded():
-    detector = ChangeDetector()
-    for _ in range(10):
-        a = np.random.randn(16).astype(np.float32)
-        b = np.random.randn(16).astype(np.float32)
-        result = detector.compare(a, [b.tolist()])
-        assert 0.0 <= result.change_magnitude <= 1.0
+def test_crack_visual_delta_survives_homography_warp(config, embedder):
+    det = ConditionVisualChangeDetector(config, embedder)
+    verifier = GeometricVerifier(config["matching"])
+    ref = make_panel(3)
+    moved = add_crack(ref.rotate(4, expand=False))
+    inliers, ratio, H = verifier.verify(verifier.extract(moved), verifier.extract(ref))
+    assert verifier.accepts(inliers, ratio)
+    res = det.assess(_pred(1.0), NORMAL_REF, moved, ref, H)
+    assert res.warped
+    assert res.visual_delta > 0.0
+
+
+def test_defect_flip_makes_change_significant(config, embedder):
+    det = ConditionVisualChangeDetector(config, embedder)
+    img = make_panel(2)
+    res = det.assess(_pred(0.0), NORMAL_REF, img, None, None)
+    assert res.condition_delta == 1.0
+    assert res.magnitude == 1.0
+    assert res.significant
+
+
+def test_magnitude_bounded(config, embedder):
+    det = ConditionVisualChangeDetector(config, embedder)
+    for p in np.linspace(0, 1, 6):
+        ref = make_panel(5)
+        res = det.assess(_pred(float(p)), NORMAL_REF, add_crack(ref, 12), ref, None)
+        assert 0.0 <= res.magnitude <= 1.0
