@@ -91,14 +91,19 @@ def normalise_to(src: np.ndarray, ref: np.ndarray, valid: np.ndarray, iterations
     for c in range(src.shape[2]):
         x = out[..., c][v]
         y = ref[..., c].astype(np.float32)[v]
-        keep = np.ones_like(x, dtype=bool)
-        g, b = 1.0, 0.0
+        # seed from the median offset (dominated by the unchanged majority), then trimmed refits
+        r0 = y - x
+        med = float(np.median(r0))
+        keep = np.abs(r0 - med) <= 2.5 * (1.4826 * float(np.median(np.abs(r0 - med))) + 1.0)
+        g, b = 1.0, med
         for _ in range(iterations):
             xs, ys = x[keep], y[keep]
             if len(xs) < 16:
                 break
+            # gain shrunk toward 1: on low-contrast views the slope is ill-conditioned (λ ≈ 10² grey levels²)
+            lam = 100.0
             var = float(xs.var())
-            g = float(((xs - xs.mean()) * (ys - ys.mean())).mean() / var) if var > 1e-6 else 1.0
+            g = float((((xs - xs.mean()) * (ys - ys.mean())).mean() + lam) / (var + lam))
             g = float(np.clip(g, 0.3, 3.0))
             b = float(ys.mean() - g * xs.mean())
             res = np.abs(g * x + b - y)
@@ -134,6 +139,8 @@ class PixelChangeDetector:
         self.abs_floor = float(c.get("abs_floor", 18.0))
         self.min_area_frac = float(c.get("min_area_fraction", 0.0015))
         self.work_side = int(c.get("work_max_side", 320))
+        self.border = float(c.get("border_ignore_fraction", 0.06))
+        self.shift_tolerance = int(c.get("shift_tolerance_px", 2))
         self.net = None
         ckpt = c.get("checkpoint")
         if ckpt and resolve_path(ckpt).is_file():
@@ -147,11 +154,21 @@ class PixelChangeDetector:
     def _classical(self, cur: np.ndarray, ref: np.ndarray, valid: np.ndarray) -> np.ndarray:
         cur_lab = cv2.cvtColor(cur.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
         ref_lab = cv2.cvtColor(ref, cv2.COLOR_RGB2LAB).astype(np.float32)
-        d_col = np.sqrt(((cur_lab - ref_lab) ** 2).sum(axis=-1))
         g = lambda x: cv2.GaussianBlur(cv2.cvtColor(x.astype(np.uint8), cv2.COLOR_RGB2GRAY), (3, 3), 0)
-        gc, gr = g(cur).astype(np.float32), g(ref).astype(np.float32)
-        d_grad = np.abs(cv2.Laplacian(gc, cv2.CV_32F) - cv2.Laplacian(gr, cv2.CV_32F))
-        d = cv2.GaussianBlur(d_col + 0.25 * d_grad, (5, 5), 0)
+        lap_c = cv2.Laplacian(g(cur).astype(np.float32), cv2.CV_32F)
+        lap_r = cv2.Laplacian(g(ref).astype(np.float32), cv2.CV_32F)
+        # shift-tolerant difference: the minimum over small offsets of the reference absorbs the
+        # residual registration error (thin cell grids, seams, edges); a new defect has no match nearby
+        r = self.shift_tolerance
+        d = None
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                M = np.float32([[1, 0, dx], [0, 1, dy]])
+                rl = cv2.warpAffine(ref_lab, M, (ref_lab.shape[1], ref_lab.shape[0]), borderMode=cv2.BORDER_REPLICATE)
+                rg = cv2.warpAffine(lap_r, M, (lap_r.shape[1], lap_r.shape[0]), borderMode=cv2.BORDER_REPLICATE)
+                dd = np.sqrt(((cur_lab - rl) ** 2).sum(axis=-1)) + 0.25 * np.abs(lap_c - rg)
+                d = dd if d is None else np.minimum(d, dd)
+        d = cv2.GaussianBlur(d, (5, 5), 0)
         v = valid > 0
         if v.sum() < 16:
             return np.zeros(valid.shape, np.uint8)
@@ -181,6 +198,10 @@ class PixelChangeDetector:
             H = S @ H_full
         ref_small = np.asarray(reference.convert("RGB").resize((W, Hh), Image.BILINEAR))
         cur_w, valid = warp_to_reference(current, (W, Hh), H)
+        if self.border > 0:
+            # crop edges carry background / box jitter in both views: not asset change
+            by, bx = int(round(Hh * self.border)), int(round(W * self.border))
+            valid[:by], valid[Hh - by:], valid[:, :bx], valid[:, W - bx:] = 0, 0, 0, 0
         cur_n = normalise_to(cur_w, ref_small, valid)
         backend = "classical"
         if self.net is not None:

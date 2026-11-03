@@ -151,6 +151,8 @@ class SemanticMemoryEngine:
         self.map_registrar = MapRegistrar(config)
         self.site_map_enabled = bool(get_nested(config, "site_map", "enabled", default=True))
         self.sync_images = bool(get_nested(config, "cloud", "sync_images", default=True))
+        self.mask_full_scale = float(get_nested(config, "change_mask", "full_scale_fraction", default=0.03))
+        self.mask_instance_min = float(get_nested(config, "change_mask", "instance_min_fraction", default=0.01))
         self._site_maps: Dict[str, Optional[SiteMap]] = {}
         self._intrinsics: Dict[tuple, CameraIntrinsics] = {}
         self.last_frame_quality: Optional[Dict[str, Any]] = None
@@ -575,6 +577,14 @@ class SemanticMemoryEngine:
                     cmask = self.pixel_change.detect(crop, reference_image, homography, cm2_per_px)
                 regions = self._defect_regions(pred, crop, reference_image, homography, cmask, cm2_per_px)
                 lat["pixel_change"] = (time.perf_counter() - t) * 1000
+                if cmask is not None and homography is not None and self.mask_full_scale > 0:
+                    # 2.1: an aligned pixel mask strengthens the visual term b of M
+                    mb = float(np.clip(cmask.changed_fraction / self.mask_full_scale, 0.0, 1.0))
+                    if change.visual_delta is None or mb > change.visual_delta:
+                        alpha = self.change_detector.alpha if hasattr(self.change_detector, "alpha") else 0.7
+                        change.visual_delta = mb
+                        change.magnitude = float(np.clip(alpha * change.condition_delta + (1 - alpha) * mb, 0.0, 1.0))
+                        change.significant = change.magnitude >= float(cfg(self.config, "change_detection", "threshold"))
 
                 criticality = asset_criticality(det.asset_type, self.config)
                 severity, significant = gated_severity(change.magnitude, criticality, cf, self.config)
@@ -648,7 +658,21 @@ class SemanticMemoryEngine:
         [] = the asset was seen without defects (open instances count a miss); None = unknown.
         """
         if not pred.is_defect or not pred.defect_type:
-            return []
+            # the classifier says normal, but an aligned pixel mask with defect-like regions is
+            # still a tracked defect (the mask compares against the confirmed reference view)
+            if cmask is None or homography is None or cmask.changed_fraction < self.mask_instance_min:
+                return []
+            kind = {"crack": "crack", "rust": "corrosion", "soiling": "soiling"}
+            out = []
+            cm2_ref = None
+            if cm2_per_crop_px and reference_image is not None:
+                cm2_ref = cm2_per_crop_px / max(homography_area_scale(homography, crop.width / 2.0, crop.height / 2.0), 1e-9)
+            for r in cmask.regions:
+                if r.change_type in kind:
+                    out.append(MeasuredRegion(r.polygon, r.bbox, r.centroid, r.area_norm, r.area_px, r.length_px, kind[r.change_type],
+                                              (r.area_px * cm2_ref) if cm2_ref else None,
+                                              (r.length_px * float(np.sqrt(cm2_ref))) if cm2_ref else None))
+            return merge_overlapping(out)
         try:
             seg = self.segmenter.segment(crop, pred.defect_type)
         except Exception:  # noqa: BLE001 - segmentation is best-effort

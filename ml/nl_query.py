@@ -59,7 +59,9 @@ class StructuredQuery(BaseModel):
     limit: Optional[int] = None
 
 
-def _num(tok: str) -> Optional[int]:
+def _num(tok: Optional[str]) -> Optional[int]:
+    if tok is None:
+        return None
     tok = tok.lower()
     if tok.isdigit():
         return int(tok)
@@ -96,7 +98,7 @@ def translate_rules(question: str) -> StructuredQuery:
         q.unseen_days_over = int((_num(unseen.group(1)) or 1) * UNIT_DAYS[unseen.group(2)])
         q.window_days = None
     crit = re.search(r"critical (?:with)?in (?:the next )?(\d+|a|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\s*(day|week|month|year)s?", t) \
-        or re.search(r"(?:become|becomes|go|goes|turn|turns|reach|reaches) critical (?:with)?in (?:the next )?(\d+|a|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\s*(day|week|month|year)s?", t)
+        or re.search(r"(?:become|becomes|go|goes|turn|turns|reach|reaches) critical (?:with)?in (?:the next )?(\d+|a|one|two|three|four|five|six|seven|eight|nine|ten|twelve)?\s*(day|week|month|year)s?", t)
     if crit:
         q.critical_within_days = int((_num(crit.group(1)) or 1) * UNIT_DAYS[crit.group(2)])
         if q.window_days == q.critical_within_days:
@@ -109,7 +111,7 @@ def translate_rules(question: str) -> StructuredQuery:
         q.min_severity = float(s.group(1))
     elif re.search(r"\bcritical (?:assets|defects|ones)\b|\bare critical\b|\bin critical\b", t) and q.critical_within_days is None:
         q.min_severity = 0.8
-    if re.search(r"open defect|unresolved|with defects|defective|have defects|has defects", t):
+    if re.search(r"open defect|unresolved|with defects|defective|have defects|has defects|(?:severe|worst|serious) defects", t):
         q.has_open_defect = True
     if re.search(r"work order|ticket|repair order", t):
         q.has_open_work_order = True
@@ -117,7 +119,7 @@ def translate_rules(question: str) -> StructuredQuery:
         q.depends_on_flagged = True
     if re.search(r"worst health|lowest health|least healthy|unhealthiest", t):
         q.sort = "health"
-    elif re.search(r"soonest|first to (?:fail|become critical)|closest to critical", t) or q.critical_within_days is not None:
+    elif re.search(r"soonest|first .{0,20}to (?:fail|become critical|go critical)|closest to critical", t) or q.critical_within_days is not None:
         q.sort = "days_to_critical"
     elif re.search(r"longest|oldest inspection|least recently", t) or q.unseen_days_over is not None:
         q.sort = "unseen"
@@ -232,8 +234,10 @@ def execute(store, site_id: Optional[str], q: StructuredQuery, now=None) -> List
         if q.trend is not None:
             obs = store.observations(aid)
             if q.window_days:
+                # the window's observations plus the last one before it (the baseline the change is measured from)
                 since = now - timedelta(days=q.window_days)
-                obs = [o for o in obs if parse_ts(o["observation_ts"]) >= since]
+                before = [o for o in obs if parse_ts(o["observation_ts"]) < since]
+                obs = before[-1:] + [o for o in obs if parse_ts(o["observation_ts"]) >= since]
             if q.defect_families:
                 obs = [o for o in obs if not o["is_defect"] or family(o["defect_type"]) in q.defect_families]
             slope = _severity_slope(obs)

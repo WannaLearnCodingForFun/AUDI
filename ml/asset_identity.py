@@ -211,6 +211,8 @@ class AssetIdentifier:
         self.radius_m = float(mcfg["location_radius_m"])
         self.early_accept_inliers = int(mcfg["early_accept_inliers"])
         self.site_map_confidence = float(mcfg.get("site_map_confidence", 0.85))
+        self.geometric = bool(mcfg.get("geometric_verification", True))
+        self.appearance_accept = float(mcfg.get("appearance_accept_similarity", 0.80))
         gcfg = config.get("geo", {}) or {}
         self.identity_mode = str(gcfg.get("identity_mode", "location_appearance"))
         self.geo_radius_m = float(gcfg.get("match_radius_m", 3.0))
@@ -319,6 +321,16 @@ class AssetIdentifier:
             if map_asset_id is not None:
                 return IdentityResult(map_asset_id, "site_map", self.site_map_confidence)
             return IdentityResult(None, "new", 0.0, candidates=cand_info)
+
+        if not self.geometric:
+            # ablation arm without SIFT verification: accept the top candidate by global cosine
+            top = shortlist[0]
+            if top.similarity >= self.appearance_accept:
+                return IdentityResult(top.asset_id, "visual_only", top.similarity, similarity=top.similarity,
+                                      reference_proto_id=top.proto_id, candidates=cand_info)
+            if map_asset_id is not None:
+                return IdentityResult(map_asset_id, "site_map", self.site_map_confidence, candidates=cand_info)
+            return IdentityResult(None, "new", 0.0, similarity=top.similarity, candidates=cand_info)
 
         # 4. Geometric verification against every prototype of each shortlisted asset
         q_feats = self.verifier.extract(crop)

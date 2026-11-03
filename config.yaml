@@ -130,6 +130,10 @@ change_mask:                        # 2.1 pixel change (ml/pixel_change.py)
   abs_floor: 18.0
   min_area_fraction: 0.0015
   work_max_side: 320
+  border_ignore_fraction: 0.06      # crop edges carry background / bbox jitter
+  shift_tolerance_px: 2             # min difference over ±N px shifts absorbs residual misregistration
+  full_scale_fraction: 0.03         # aligned changed fraction that maps to visual term b = 1 in M (0 disables)
+  instance_min_fraction: 0.01       # aligned changed fraction above which mask regions seed defect instances
 
 segmentation:                       # 3.3 defect masks (ml/segmentation.py)
   backend: "classical"              # classical | yolo_seg | sam2
