@@ -269,6 +269,11 @@ graph:                              # 5.1 priority propagation (ml/knowledge_gra
   min_source_priority: 0.3
   max_depth: 6
 
+multi_drone:                        # 6.3 one memory from several drones
+  auto_merge: true                  # after a pull, merge assets two drones registered separately
+  duplicate_radius_m: 3.0
+  duplicate_similarity: 0.95        # best prototype cosine (identity embedding)
+
 work_orders:                        # 6.2
   auto_create: true                 # a critical defect opens a ticket
 

@@ -1,6 +1,6 @@
 # Simulated-mission evaluation (4.3) and ablations (7.2)
 
-Seeds [7, 11, 13], 6 missions each. Synthetic site: rows of near-identical solar panels, a pole line, a wall, machinery; damage grows between missions. Backbone: weight-free projection embedder, so absolute numbers are a lower bound for DINOv2; the comparison between arms is the point.
+Source: simulator. Seeds [7, 11, 13], 6 missions each. Synthetic site: rows of near-identical solar panels, a pole line, a wall, machinery; damage grows between missions. Backbone: weight-free projection embedder, so absolute numbers are a lower bound for DINOv2; the comparison between arms is the point.
 
 ## Re-identification
 

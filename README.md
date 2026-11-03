@@ -1,5 +1,7 @@
 # AUDI — persistent semantic memory for drone inspection
 
+[![CI](https://github.com/WannaLearnCodingForFun/AUDI/actions/workflows/ci.yml/badge.svg)](https://github.com/WannaLearnCodingForFun/AUDI/actions/workflows/ci.yml)
+
 AUDI remembers every physical asset it has inspected (solar panels, utility poles and
 insulators, building/concrete surfaces, machinery). On each flight it re-identifies the
 assets it sees, compares their condition with the last inspection, scores the change, alerts
@@ -41,6 +43,51 @@ is the verified work log.
    frontend/ (React + Vite)                     cloud/ (separate FastAPI service, own DB, JWT)
    operator · maintenance · admin views         pull_site (FR-2), push_outbox (FR-6/7)
 ```
+
+### Longitudinal memory upgrades
+
+The upgrade plan (Nov 2026) is implemented on top of this pipeline; `docs/UPGRADES.md` lists
+every item with its code, tests and verification status.
+
+```
+ frame + drone pose ──► quality gate (3.4) ──► detect (YOLO-World | fine-tuned hybrid 3.2)
+        │                                         │
+        │   ground projection of each box (1.1) ◄─┘    frame → orthomosaic registration (1.2)
+        ▼                                                         │
+ identity: ArUco → site-map footprint → GPS gate (≈3 m) → re-ID head shortlist (1.3) → SIFT → new
+        ▼
+ change: condition delta + aligned pixel mask, cm² (2.1, 3.6) ──► M-gated severity
+        ▼
+ defect instances matched across visits (2.2) ──► growth model → predicted critical date (2.3)
+        ▼                                                        │
+ revisit priority (forecast urgency, graph propagation 5.1) ◄────┘   health index (5.5)
+        ▼
+ event: explanation (5.3), guidance (2.4), thermal hotspots (3.1) → live UI, ROS 2 (4.2), work orders (6.2)
+```
+
+| Where | What |
+|---|---|
+| `ml/geo_projection.py`, `ml/site_map.py`, `ml/reid_head.py` | spatial identity, site map, identity head |
+| `ml/pixel_change.py`, `ml/siamese_change.py`, `ml/segmentation.py`, `ml/defect_tracking.py`, `ml/forecast.py` | change masks, defect masks, per-defect tracking, growth forecasts |
+| `ml/guidance.py`, `ml/coverage.py`, `ml/route_plan.py`, `ml/twin.py` | in-flight guidance, coverage, advisory QGC route, 3D scene |
+| `ml/knowledge_graph.py`, `ml/nl_query.py`, `ml/explain.py`, `ml/health_index.py`, `ml/owner_report.py` | semantic layer |
+| `ml/quality_gate.py`, `ml/camera_model.py`, `ml/calibration.py`, `ml/thermal.py` | sensing |
+| `memory/store_ext.py` | merge / split, audit, instances, relations, feedback, work orders, drones |
+| `api/routers/{spatial,memory_ops,maintenance,drones}.py`, `api/observability.py` | API, metrics, rate limiting |
+| `sim/`, `scripts/run_sim_eval.py` | simulator with ground truth, ablations (`reports/sim/ablation.md`) |
+| `ros2/` | ROS 2 messages and nodes |
+| `docker-compose.yml`, `deploy/`, `docs/DEPLOY.md` | cloud deployment |
+
+Simulated missions (3 seeds × 6 missions, `make sim-eval`): adding the location gate raises
+re-ID Rank-1 from 0.75 to 0.92 and lowers the false-new-asset rate from 0.07 to 0.02; the
+aligned pixel mask reaches change F1 0.75; the per-defect growth model predicts the date a
+defect turns critical with a mean error of 38 days vs 124 for the severity-slope baseline.
+These are simulator numbers with a weight-free embedder; real-data numbers need the
+multi-visit dataset (`docs/DATASET_PROTOCOL.md`).
+
+New make targets: `sim-eval`, `sim-quick`, `train-reid`, `train-change`, `copy-paste`,
+`train-detector`, `train-seg`, `train-thermal`, `calibrate`, `export-edge`, `owner-report`,
+`retrain-feedback`, `deploy-config`, `lint`.
 
 Module boundaries are interfaces, so implementations can be swapped. For example, the embedder
 can be DINOv2, ResNet or a projection embedder; the detector can be YOLO-World or full-frame;

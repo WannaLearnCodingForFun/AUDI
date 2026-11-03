@@ -58,6 +58,9 @@ class MissionService:
             raise KeyError(f"Unknown site: {site_id}")
         sync = self.sync.start_sync(site_id)
         if sync.get("pulled") and any(sync["pulled"].values()):
+            # 6.3: another drone may have registered the same physical assets
+            if (self.engine.config.get("multi_drone") or {}).get("auto_merge", True):
+                sync["duplicates_merged"] = self.store.merge_duplicate_assets(site_id)
             self.engine.reload_index()
         session = self.store.create_session(site_id, operator_id, sync["mode"], sync, simulated, drone_id=drone_id)
         self.engine.start_prefetch(site_id)

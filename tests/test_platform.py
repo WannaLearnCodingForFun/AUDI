@@ -308,3 +308,39 @@ def test_owner_report_from_real_data(stack):
     assert rep["health"]["site"] is not None and len(rep["health"]["assets"]) == 2
     pdf = client.get(f"/api/sites/{SITE}/owner-report", params={"month": month, "format": "pdf"}, headers=op)
     assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
+
+
+def test_two_drones_produce_one_consistent_memory(config, embedder, classifier, tmp_path):
+    """6.3: two drones fly the same site offline, both sync; the next pull merges their duplicates."""
+    from cloud.main import create_app as cloud_create
+    from tests.test_sync_mission import InProcessCloud
+
+    config["geo"]["identity_mode"] = "location_appearance"
+    capp = cloud_create(config, secret="cloud-secret")
+    capp.state.seed_user("sync", "sync-pass")
+    stacks = []
+    for name in ("a", "b"):
+        cfg = {**config, "storage": {**config["storage"], "db_url": f"sqlite:///{tmp_path}/{name}.db", "images_dir": str(tmp_path / f"img_{name}")}}
+        cloud = InProcessCloud(capp, "sync", "sync-pass")
+        cloud.up = False
+        svc = make_stack(cfg, embedder, classifier, cloud)
+        drone = svc.store.register_drone(f"drone-{name}", [SITE], ["sessions:start"])
+        stacks.append((svc, cloud, drone))
+    for i, (svc, cloud, drone) in enumerate(stacks):
+        sid = svc.mission.start(SITE, "op", drone_id=drone["drone_id"])["session"]["session_id"]
+        for k, seed in enumerate((161, 162)):
+            svc.engine.observe(make_panel(seed), "solar_panel", sid, location={"latitude": 47.0 + k * 2e-4, "longitude": 8.0 + i * 3e-6})
+        svc.mission.end(sid)
+    a, b = stacks
+    for svc, cloud, _ in stacks:
+        cloud.up = True
+        svc.sync.flush_once()
+    started = a[0].mission.start(SITE, "op", drone_id=a[2]["drone_id"])
+    merged = started["sync"].get("duplicates_merged") or []
+    assert len(merged) == 2, merged
+    assets = a[0].store.list_assets(SITE)
+    assert len(assets) == 2
+    obs = sum(len(a[0].store.observations(x["asset_id"])) for x in assets)
+    assert obs == 4                                       # nothing lost: 2 drones × 2 panels
+    ev = a[0].engine.observe(make_panel(161), "solar_panel", started["session"]["session_id"], location={"latitude": 47.0, "longitude": 8.0})
+    assert ev.asset_id in {x["asset_id"] for x in assets}

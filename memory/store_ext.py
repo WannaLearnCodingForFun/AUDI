@@ -320,6 +320,56 @@ class StoreExtMixin:
                 continue   # already reflected in the pulled records
         return done
 
+    # ── multi-drone memory merge (6.3) ────────────────────────────────────
+    def find_duplicate_assets(self, site_id: str) -> List[Dict[str, Any]]:
+        """Pairs of assets that are the same physical asset registered by two drones:
+        same type, within multi_drone.duplicate_radius_m, best prototype cosine ≥
+        multi_drone.duplicate_similarity, and no conflicting ArUco markers."""
+        import numpy as np
+
+        from ml.asset_identity import haversine_m
+
+        c = self.config.get("multi_drone") or {}
+        radius = float(c.get("duplicate_radius_m", 3.0))
+        sim_thr = float(c.get("duplicate_similarity", 0.95))
+        with self.read() as s:
+            assets = list(s.scalars(select(db.Asset).where(db.Asset.site_id == site_id, db.Asset.latitude.is_not(None))))
+            protos: Dict[str, List[np.ndarray]] = {}
+            for p in s.scalars(select(db.AssetPrototype).where(db.AssetPrototype.asset_id.in_([a.asset_id for a in assets]))):
+                v = np.frombuffer(p.embedding, dtype=np.float32)
+                protos.setdefault(p.asset_id, []).append(v / (np.linalg.norm(v) + 1e-12))
+            drone_of = {}
+            for o_asset, sess_drone in s.execute(select(db.Observation.asset_id, db.Session.drone_id)
+                                                 .join(db.Session, db.Session.session_id == db.Observation.session_id)
+                                                 .where(db.Session.site_id == site_id)):
+                drone_of.setdefault(o_asset, set()).add(sess_drone)
+        out = []
+        for i, a in enumerate(assets):
+            for b in assets[i + 1:]:
+                if a.asset_type != b.asset_type or (a.marker_id is not None and b.marker_id is not None and a.marker_id != b.marker_id):
+                    continue
+                # the same drone in the same sessions already had the chance to match them
+                if drone_of.get(a.asset_id) and drone_of.get(a.asset_id) == drone_of.get(b.asset_id):
+                    continue
+                d = haversine_m(a.latitude, a.longitude, b.latitude, b.longitude)
+                if d > radius or a.asset_id not in protos or b.asset_id not in protos:
+                    continue
+                sim = max(float(x @ y) for x in protos[a.asset_id] for y in protos[b.asset_id])
+                if sim >= sim_thr:
+                    keep, gone = (a, b) if a.first_observed_ts <= b.first_observed_ts else (b, a)
+                    out.append({"keep_id": keep.asset_id, "merge_id": gone.asset_id, "distance_m": d, "similarity": sim})
+        return out
+
+    def merge_duplicate_assets(self, site_id: str, actor: str = "multi_drone") -> List[Dict[str, Any]]:
+        merged, gone = [], set()
+        for d in sorted(self.find_duplicate_assets(site_id), key=lambda x: -x["similarity"]):
+            if d["keep_id"] in gone or d["merge_id"] in gone:
+                continue
+            self.merge_assets(d["keep_id"], d["merge_id"], actor)
+            gone.add(d["merge_id"])
+            merged.append(d)
+        return merged
+
     # ── defect instances (2.2 / 2.3) ──────────────────────────────────────
     def _apply_instances(self, s: OrmSession, a: db.Asset, obs: db.Observation,
                          regions: Optional[List[MeasuredRegion]]) -> List[Dict[str, Any]]:

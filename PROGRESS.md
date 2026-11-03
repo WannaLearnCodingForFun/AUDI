@@ -1,5 +1,20 @@
 # AUDI overhaul — progress log
 
+## Upgrade plan (Nov 2026)
+
+All 34 items of the upgrade plan are implemented; `docs/UPGRADES.md` has the per-item table with
+code, tests and what is verified here vs what needs hardware, trained weights, data or people.
+Suite after the upgrade: `pytest -q` → **169 passed, 1 skipped**; `ruff check .` clean;
+`python scripts/run_sim_eval.py --quick` passes its gates; `npm run build` OK; new pages checked
+in Chromium (no console errors). Simulator ablations: `reports/sim/ablation.md`.
+
+Run on your machine (needs weights / data / hardware): `make train-reid`, `make copy-paste && make train && make eval`
+(solar physical_damage F1), `make train-change`, `make train-detector`, `make train-seg`, `make train-thermal`,
+`make calibrate`, `make export-edge` on the Jetson, `scripts/build_site_map.py` on a survey flight,
+the ROS 2 rosbag replay test, and the multi-visit dataset (`docs/DATASET_PROTOCOL.md`).
+
+---
+
 Items are ticked only when verified, by a passing test or by real output pasted below.
 Current suite: `pytest -q` → **109 passed** (Python 3.11.14 venv, Apple M4, MPS).
 If you say "continue", re-read this file and resume from the first unticked item. Everything
