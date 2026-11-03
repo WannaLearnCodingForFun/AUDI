@@ -198,3 +198,14 @@ def test_engine_uses_site_map_footprint(config, embedder, classifier, tmp_path):
     assert ev.geo["site_map"]["asset_id"] == b["asset_id"]
     assert ev.asset_id == b["asset_id"] and ev.identity["stage"] in {"site_map", "geometric"}
     assert ev.asset_id != a["asset_id"]
+
+
+def test_world_to_pixel_inverts_ground_projection():
+    from ml.geo_projection import world_to_pixel
+
+    k = intr()
+    pose = CameraPose(LAT, LON, 15.0, heading_deg=33.0, pitch_deg=50.0, roll_deg=3.0)
+    fix = project_pixel(410.0, 300.0, k, pose)
+    u, v = world_to_pixel(fix.east_m, fix.north_m, 0.0, pose, k)
+    assert u == pytest.approx(410.0, abs=1e-6) and v == pytest.approx(300.0, abs=1e-6)
+    assert world_to_pixel(0.0, -100.0, 0.0, CameraPose(LAT, LON, 15.0, heading_deg=0, pitch_deg=10), k) is None

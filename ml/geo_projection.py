@@ -154,3 +154,17 @@ class GeoProjector:
             return None
         u, v = anchor_pixel(bbox, self.anchors.get(asset_type, self.anchors.get("default", "center")))
         return project_pixel(u, v, intr, pose, self.gps_accuracy_m, self.attitude_error_deg, self.max_range_m)
+
+
+def world_to_pixel(east: float, north: float, up: float, pose: CameraPose, intr: CameraIntrinsics,
+                   pose_east: float = 0.0, pose_north: float = 0.0) -> Optional[Tuple[float, float]]:
+    """Pixel where a local ENU point appears (inverse of `project_pixel`; no distortion).
+
+    (pose_east, pose_north) is the drone's position in the same ENU frame; it flies at
+    pose.altitude_agl. None when the point is behind the camera."""
+    right, down, forward = camera_axes(pose.heading_deg, pose.pitch_deg, pose.roll_deg)
+    d = np.array([east - pose_east, north - pose_north, up - pose.altitude_agl])
+    z = float(d @ forward)
+    if z <= 1e-6:
+        return None
+    return intr.cx + intr.fx * float(d @ right) / z, intr.cy + intr.fy * float(d @ down) / z

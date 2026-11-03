@@ -73,6 +73,14 @@ def live_capture(body: CaptureRequest, _: Dict = Depends(operator_only), service
     return {"forced_track_id": track}
 
 
+@router.post("/api/live/ros-alert")
+def ros_alert(event: Dict[str, Any], _: Dict = Depends(operator_only), services: Services = Depends(get_services)) -> Dict[str, Any]:
+    """Alerts relayed by the ROS 2 alert_bridge (4.2) are pushed to web clients like live alerts."""
+    level = "critical" if event.get("critical") else ("priority" if event.get("priority") else None)
+    services.hub.publish("live", {"type": "event", "event": event, "alert": level, "source": "ros"})
+    return {"published": True, "alert": level}
+
+
 @router.get("/api/live/stream")
 async def live_stream(token: str = Query(...), services: Services = Depends(get_services)):
     """MJPEG of the annotated frame (an <img> cannot send headers, so the JWT comes as ?token=)."""

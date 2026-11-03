@@ -13,7 +13,10 @@ model:
   # The embedding dimension is derived from the loaded model at runtime (D12).
 
 detection:
-  mode: "yolo_world"                # yolo_world | full_frame (whole frame = one asset, desk demos)
+  mode: "yolo_world"                # yolo_world | hybrid (3.2 fine-tuned + YOLO-World fallback) | full_frame (desk demos)
+  finetuned_weights: "models/detector_finetuned.pt"   # training/train_detector.py
+  finetuned_confidence: 0.25
+  hybrid_open_vocabulary: true      # hybrid: YOLO-World on frames where the fine-tuned model finds nothing
   weights: "models/yolov8s-worldv2.pt"
   text_encoder_dir: "models/weights"      # CLIP text encoder used to embed the prompts
   onnx_export: false                # export to models/*.onnx on first load and run via ONNX
@@ -51,6 +54,12 @@ condition_classifier:
   fine_tune_lr: 0.00001
   fine_tune_head_lr: 0.0001
   fine_tune_batch_size: 32
+  focal_gamma: 2.0                  # 3.5 focal loss for weak classes (0 = cross-entropy)
+  copy_paste:                       # 3.5 copy-paste cracks onto clean panels (training/copy_paste_augment.py)
+    enabled: true
+    manifest: "data/copy_paste/manifest.json"
+    targets: {solar_panel: physical_damage}
+    per_target: 600
   augment:
     blur_prob: 0.3
     blur_sigma_max: 1.5
@@ -241,6 +250,11 @@ revisit_priority:
 
 defects:
   resolution_suggestion_missions: 3 # consecutive normal missions before suggesting resolution
+
+thermal:                            # 3.1 (ml/thermal.py)
+  minor_delta_c: 3.0
+  hotspot_delta_c: 10.0             # IEC TS 62446-3: ΔT ≥ 10 K serious
+  critical_delta_c: 20.0
 
 health_index:                       # 5.5 (ml/health_index.py)
   w_severity: 0.4

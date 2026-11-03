@@ -52,6 +52,30 @@ def balanced_weights(y: np.ndarray) -> np.ndarray:
     return (1.0 / counts[y]).astype(np.float64)
 
 
+def focal_loss(logits: torch.Tensor, target: torch.Tensor, gamma: float) -> torch.Tensor:
+    """Focal loss (Lin et al. 2017): down-weights easy examples so hard / rare classes such as
+    solar physical_damage get gradient (3.5). gamma = 0 is plain cross-entropy."""
+    ce = F.cross_entropy(logits, target, reduction="none")
+    if gamma <= 0:
+        return ce.mean()
+    pt = torch.exp(-ce)
+    return ((1 - pt) ** gamma * ce).mean()
+
+
+def copy_paste_rows(config, rows: List[Row]) -> List[Row]:
+    """Synthetic training rows written by training/copy_paste_augment.py (train split only)."""
+    import json as _json
+
+    path = resolve_path((cfg(config, "condition_classifier").get("copy_paste") or {}).get("manifest", "data/copy_paste/manifest.json"))
+    if not path.exists():
+        return []
+    extra = []
+    for d in _json.loads(path.read_text()):
+        extra.append(Row(**{k: d[k] for k in Row.__dataclass_fields__ if k in d}))
+    logger.info("copy-paste augmentation: %d synthetic rows from %s", len(extra), path)
+    return extra
+
+
 def evaluate_heads(net: MultiHeadNet, data: Dict[str, Tuple[np.ndarray, np.ndarray]], label_maps, device) -> Dict[str, float]:
     net.eval()
     out = {}
@@ -79,6 +103,7 @@ def train_heads(
     bs = int(ccfg["batch_size"])
     tensors = {t: (torch.as_tensor(x, device=device), torch.as_tensor(y, device=device)) for t, (x, y) in train.items()}
     weights = {t: balanced_weights(y) for t, (_, y) in train.items()}
+    gamma = float(ccfg.get("focal_gamma", 0.0))
 
     best_state, best_f1, best_epoch, best_per_type = None, -1.0, 0, {}
     history, stale = [], 0
@@ -93,7 +118,7 @@ def train_heads(
         for t, idx in batches:
             x, y = tensors[t]
             ii = torch.as_tensor(idx, device=device)
-            loss = F.cross_entropy(net(x[ii], t), y[ii])
+            loss = focal_loss(net(x[ii], t), y[ii], gamma)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -240,6 +265,8 @@ def main() -> None:
     rows = load_manifest(config)
     label_maps = label_maps_from(rows)
     rows = [r for r in rows if r.asset_type in label_maps and r.condition in label_maps[r.asset_type]]
+    if (ccfg.get("copy_paste") or {}).get("enabled"):
+        rows += [r for r in copy_paste_rows(config, rows) if r.asset_type in label_maps and r.condition in label_maps[r.asset_type]]
     embedder = AssetEmbeddingModel.from_config(config)
     device = embedder.device
     logger.info("backbone %s dim %d on %s; heads %s", embedder.active_model_name, embedder.embedding_dim, device, label_maps)

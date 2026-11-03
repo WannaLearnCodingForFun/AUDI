@@ -96,6 +96,7 @@ class AssetEvent:
     heatmap_reference: Optional[str] = None
     mask_reference: Optional[str] = None
     geo: Optional[Dict[str, Any]] = None           # 1.1/1.2 ground fix, site-map hit
+    thermal: Optional[Dict[str, Any]] = None       # 3.1 hotspot report
     quality: Optional[Dict[str, Any]] = None       # 3.4 gate result
     change_mask: Optional[Dict[str, Any]] = None   # 2.1 pixel change
     defect_instances: List[Dict[str, Any]] = field(default_factory=list)   # 2.2/2.3
@@ -335,8 +336,14 @@ class SemanticMemoryEngine:
         timestamp: Optional[str] = None,
         force_track_id: Optional[int] = None,
         pose: Optional[Dict[str, Any]] = None,
+        thermal: Optional[Any] = None,
+        thermal_homography: Optional[np.ndarray] = None,
     ) -> List[AssetEvent]:
         """Quality gate → detect → track → process each new/changed track once (D8).
+
+        `thermal` (optional, 3.1): a ml.thermal.ThermalFrame (or °C array) from a co-mounted
+        thermal camera; registered to this frame (rig homography refined by ECC) and analysed
+        for hotspots inside every detection.
 
         `pose` (optional): drone GPS + height above ground + camera heading/pitch/roll, see
         ml/geo_projection.CameraPose. With a pose every detection is geo-anchored (1.1).
@@ -358,6 +365,8 @@ class SemanticMemoryEngine:
         t_emb = (time.perf_counter() - t1) * 1000
         t2 = time.perf_counter()
         spatial = self._frame_spatial(frame, detections, session_id, pose, location)
+        if thermal is not None:
+            self._attach_thermal(frame, detections, spatial, thermal, thermal_homography)
         t_spatial = (time.perf_counter() - t2) * 1000
         tracks = (
             tracker.update([d.bbox for d in detections], [d.asset_type for d in detections], embeddings, crops)
@@ -376,6 +385,23 @@ class SemanticMemoryEngine:
             ev.latency_ms.update({"quality": t_q, "detect": t_det, "embed_batch": t_emb, "spatial": t_spatial})
             events.append(ev)
         return events
+
+    def _attach_thermal(self, frame, detections, spatial, thermal, H0) -> None:
+        from ml.thermal import ThermalFrame, hotspots, register, warp_to_rgb
+
+        tf = thermal if isinstance(thermal, ThermalFrame) else ThermalFrame(np.asarray(thermal, dtype=np.float32))
+        rgb = np.asarray(frame.convert("RGB"))
+        H = register(tf, rgb, H0) if H0 is None or get_nested(self.config, "thermal", "refine_ecc", default=True) else H0
+        if H is None:
+            H = H0
+        if H is None:
+            return
+        aligned = warp_to_rgb(tf, H, (frame.width, frame.height))
+        for det, sp in zip(detections, spatial):
+            x1, y1, x2, y2 = (int(v) for v in det.bbox)
+            crop = aligned[y1:y2, x1:x2]
+            if crop.size and np.isfinite(crop).mean() > 0.5:
+                sp["thermal"] = hotspots(crop, self.config).to_dict()
 
     # ── spatial context (1.1, 1.2, 3.6) ───────────────────────────────────
     def _frame_spatial(self, frame: Image.Image, detections: Sequence[Detection], session_id: Optional[str],
@@ -507,6 +533,7 @@ class SemanticMemoryEngine:
                 raise ValueError("Persisting an observation requires an active session (D7)")
             site_id = session["site_id"] if session else cfg(self.config, "sites", "default_site_id")
             ev.geo = spatial.get("geo")
+            ev.thermal = spatial.get("thermal")
             scale: Optional[MetricScale] = spatial.get("scale")
             dq = self.quality.check_detection(crop, det.asset_type, scale.distance_m if scale else None, spatial.get("ray_pitch_deg"))
             ev.quality = dq.to_dict()
@@ -622,6 +649,9 @@ class SemanticMemoryEngine:
                     reference_label=None if identity.is_new else reference.label,
                     instances=ev.defect_instances, growth_text=ev.growth,
                 )
+                if ev.thermal and ev.thermal.get("severity") in ("serious", "critical"):
+                    ev.explanation["reasons"].append(
+                        f"thermal hotspot ΔT = {ev.thermal['delta_c']:.1f} K ({ev.thermal['severity']})")
                 ev.guidance = self._guidance(ev, det, spatial, asset_row)
                 self._update_track(track, ev, pred)
         except Exception as exc:  # noqa: BLE001 - errors are reported per asset, never crash a mission

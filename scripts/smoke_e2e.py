@@ -224,6 +224,10 @@ def main() -> None:
         c.check("live alerts pushed over /ws/live", len(alerts) > 0,
                 f"{len(alerts)} alerts, latency p95 {op.get('/api/live/status').json().get('latency_ms', {}).get('alert', {}).get('p95')}")
         c.check("live status pushed over /ws/live", len(live_ws.of_type("status")) > 0)
+        # reference event stream for the ROS 2 rosbag replay test (ros2/audi_ros/launch/replay_test.launch.py)
+        ev_out = ROOT / "reports" / "smoke" / "events.jsonl"
+        ev_out.parent.mkdir(parents=True, exist_ok=True)
+        ev_out.write_text("".join(json.dumps(m["event"]) + "\n" for m in live_ws.of_type("event")))
         stream = op.get("/api/live/stream", params={"token": tokens["operator"]})
         c.check("MJPEG stream endpoint answers after the flight", stream.status_code == 200)
 

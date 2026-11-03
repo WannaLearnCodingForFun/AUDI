@@ -1,0 +1,7 @@
+string session_id
+---
+bool ok
+int32 assets_processed
+int32 missing_assets
+string report_json
+string message

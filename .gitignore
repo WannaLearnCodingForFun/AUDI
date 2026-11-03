@@ -37,3 +37,4 @@ frontend/dist/
 
 # Logs
 *.log
+sim/gazebo/build/

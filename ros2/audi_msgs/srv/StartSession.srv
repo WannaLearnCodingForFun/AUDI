@@ -1,0 +1,7 @@
+string site_id
+bool simulated
+---
+bool ok
+string session_id
+string mode              # online | offline
+string message

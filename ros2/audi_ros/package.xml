@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>audi_ros</name>
+  <version>0.1.0</version>
+  <description>ROS 2 nodes for AUDI: perception, mission services, alert bridge (read-only towards the autopilot)</description>
+  <maintainer email="audi@example.invalid">AUDI</maintainer>
+  <license>Proprietary</license>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>mavros_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>audi_msgs</exec_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

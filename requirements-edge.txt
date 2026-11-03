@@ -1,0 +1,4 @@
+# Edge export / benchmark (4.1): scripts/export_edge.py
+-r requirements.txt
+onnx>=1.16
+onnxruntime>=1.18        # onnxruntime-gpu / the JetPack wheel on a Jetson
