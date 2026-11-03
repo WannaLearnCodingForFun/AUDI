@@ -6,6 +6,9 @@ R = w3·Sr + w4·T + w5·D
      least-squares slope of per-mission severity (severity per mission index)
      multiplied by (n − 1), i.e. the fitted rise across the window, clipped to
      [0, 1]. Falling or flat trends give 0 (D15).
+     Upgrade 2.3: when any open defect instance of the asset has a deterioration forecast,
+     T is the forecast urgency 1 − days_to_critical / forecast.urgency_horizon_days (clipped)
+     instead of the severity slope ("trend_source" = "forecast").
   D  min(1, days since last inspection / max_days_since_inspection), evaluated
      at query time ("now"), so it keeps growing between missions (D9).
 """
@@ -49,10 +52,18 @@ def compute_revisit(
     last_inspection: Optional[str | datetime],
     config: Dict,
     now: Optional[datetime] = None,
+    days_to_critical: Optional[float] = None,
 ) -> Dict[str, float]:
     rp = cfg(config, "revisit_priority")
     sr = max(0.0, min(1.0, float(mission_severities[-1]) if mission_severities else 0.0))
-    t = calculate_trend(mission_severities, int(rp["trend_window"]))
+    source = "severity_slope"
+    if days_to_critical is not None:
+        from ml.forecast import forecast_urgency
+
+        t = forecast_urgency(days_to_critical, config)
+        source = "forecast"
+    else:
+        t = calculate_trend(mission_severities, int(rp["trend_window"]))
     d = time_decay(last_inspection, now, float(rp["max_days_since_inspection"]))
     r = float(rp["w3"]) * sr + float(rp["w4"]) * t + float(rp["w5"]) * d
     return {
@@ -60,4 +71,6 @@ def compute_revisit(
         "trend": t,
         "days_since_inspection": d,
         "revisit_priority": max(0.0, min(1.0, r)),
+        "trend_source": source,
+        "days_to_critical": days_to_critical,
     }

@@ -2,7 +2,14 @@
 
 Stages (each swappable and configurable):
   1. Fiducial: ArUco marker id inside/near the bbox → asset via the site marker table.
-  2. Location gate: only assets of the same type within matching.location_radius_m.
+  1b. Site map (upgrade 1.2): the detection falls inside a registered asset footprint on the
+     site orthomosaic → that asset is the only candidate; accepted as "site_map" if visual
+     verification cannot run or fails only for lack of texture.
+  2. Location gate (upgrade 1.1): only assets of the same type within the radius. With a
+     ground-projected fix (ml/geo_projection.py) the radius is geo.match_radius_m (≈3 m)
+     widened to the fix's uncertainty; with a raw drone GPS fix it is
+     matching.location_radius_m. Without any fix the cascade falls back to appearance only.
+     geo.identity_mode = "appearance" disables the gate (ablation baseline).
   3. Visual shortlist: global-embedding cosine top-k from the prototype index.
   4. Geometric verification: SIFT/ORB + RANSAC homography against the
      shortlisted assets' reference views.
@@ -13,6 +20,7 @@ Match confidence (identity only, never used in severity — D1):
   geometric      → 0.5 + 0.5·min(1, inliers / (2·min_inliers))
   visual_only    → global cosine similarity (only when the query or all
                    reference views lack keypoints, e.g. texture-less surfaces)
+  site_map       → matching.site_map_confidence
   new            → 0.0 (1.0 when an unknown ArUco marker certifies a new asset)
 """
 
@@ -202,6 +210,11 @@ class AssetIdentifier:
         self.visual_only = float(mcfg["visual_only_similarity"])
         self.radius_m = float(mcfg["location_radius_m"])
         self.early_accept_inliers = int(mcfg["early_accept_inliers"])
+        self.site_map_confidence = float(mcfg.get("site_map_confidence", 0.85))
+        gcfg = config.get("geo", {}) or {}
+        self.identity_mode = str(gcfg.get("identity_mode", "location_appearance"))
+        self.geo_radius_m = float(gcfg.get("match_radius_m", 3.0))
+        self.geo_radius_max_m = float(gcfg.get("match_radius_max_m", 10.0))
         self.index = index
         self.reference_loader = reference_loader
         self.verifier = GeometricVerifier(mcfg)
@@ -229,19 +242,30 @@ class AssetIdentifier:
         with self._cache_lock:
             self._feature_cache.pop(proto_id, None)
 
+    def gate_radius(self, uncertainty_m: Optional[float]) -> float:
+        """Radius for a ground-projected fix: match_radius_m widened to the fix uncertainty."""
+        if uncertainty_m is None:
+            return self.radius_m
+        return min(self.geo_radius_max_m, max(self.geo_radius_m, float(uncertainty_m)))
+
     def location_gate(
-        self, assets: Sequence[AssetRef], asset_type: str, location: Optional[GeoLocation]
+        self,
+        assets: Sequence[AssetRef],
+        asset_type: str,
+        location: Optional[GeoLocation],
+        radius_m: Optional[float] = None,
     ) -> Optional[Set[str]]:
         """Asset ids allowed by location, or None when no gating applies."""
-        if location is None:
+        if location is None or self.identity_mode == "appearance":
             return None
+        radius = self.radius_m if radius_m is None else radius_m
         allowed = set()
         for a in assets:
             if a.asset_type != asset_type:
                 continue
             if a.location is None or haversine_m(
                 location.latitude, location.longitude, a.location.latitude, a.location.longitude
-            ) <= self.radius_m:
+            ) <= radius:
                 allowed.add(a.asset_id)
         return allowed
 
@@ -256,6 +280,8 @@ class AssetIdentifier:
         location: Optional[GeoLocation],
         site_assets: Sequence[AssetRef],
         marker_table: Dict[int, str],
+        location_uncertainty_m: Optional[float] = None,
+        map_asset_id: Optional[str] = None,
     ) -> IdentityResult:
         # 1. Fiducial
         marker_id: Optional[int] = None
@@ -268,8 +294,17 @@ class AssetIdentifier:
                 # A marker that is not in the site table denotes a new tagged asset.
                 return IdentityResult(None, "new", 1.0, marker_id=marker_id)
 
-        # 2. Location gate
-        allowed = self.location_gate(site_assets, asset_type, location)
+        # 1b. Site-map footprint
+        if map_asset_id is not None:
+            ref = next((a for a in site_assets if a.asset_id == map_asset_id), None)
+            if ref is None or ref.asset_type != asset_type:
+                map_asset_id = None
+        if map_asset_id is not None:
+            allowed: Optional[Set[str]] = {map_asset_id}
+        else:
+            # 2. Location gate
+            radius = self.gate_radius(location_uncertainty_m)
+            allowed = self.location_gate(site_assets, asset_type, location, radius)
         if allowed is not None and not allowed:
             return IdentityResult(None, "new", 0.0)
 
@@ -281,6 +316,8 @@ class AssetIdentifier:
         ]
         cand_info = [{"asset_id": c.asset_id, "similarity": round(c.similarity, 4)} for c in shortlist]
         if not shortlist:
+            if map_asset_id is not None:
+                return IdentityResult(map_asset_id, "site_map", self.site_map_confidence)
             return IdentityResult(None, "new", 0.0, candidates=cand_info)
 
         # 4. Geometric verification against every prototype of each shortlisted asset
@@ -321,6 +358,12 @@ class AssetIdentifier:
                 similarity=top.similarity,
                 reference_proto_id=top.proto_id,
                 candidates=cand_info,
+            )
+
+        if map_asset_id is not None:
+            return IdentityResult(
+                map_asset_id, "site_map", self.site_map_confidence, similarity=top.similarity,
+                reference_proto_id=top.proto_id, candidates=cand_info,
             )
 
         # 5. New asset

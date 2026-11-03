@@ -82,6 +82,116 @@ matching:
   feature_cache_size: 2048          # reference-view keypoint sets kept in memory
   max_prototypes_per_asset: 8
   prototype_novelty: 0.08           # add a prototype if its max cosine to existing ones < 1 - novelty
+  site_map_confidence: 0.85         # identity confidence of a site-map footprint hit (1.2)
+
+geo:                                # 1.1 geo-anchored identity (ml/geo_projection.py)
+  enabled: true
+  identity_mode: "location_appearance"   # appearance (ablation baseline) | location_appearance
+  match_radius_m: 3.0               # gate radius around a ground-projected fix …
+  match_radius_max_m: 10.0          # … widened to the fix uncertainty, capped here
+  gps_accuracy_m: 1.5               # used when the pose carries no accuracy
+  attitude_error_deg: 1.0
+  max_range_m: 500.0
+  anchor:                           # bbox point that touches the ground
+    solar_panel: "center"
+    utility_pole: "bottom"
+    building: "bottom"
+    machinery: "bottom"
+    default: "center"
+
+camera_model:                       # 3.6 calibrated scale (ml/camera_model.py)
+  calibration_file: "models/camera_calibration.json"   # scripts/calibrate_camera.py; FOV fallback below
+  hfov_deg: 78.0
+  asset_width_m:                    # range-from-size when no range / altitude is known
+    solar_panel: 1.0
+    utility_pole: 0.3
+    building: 4.0
+    machinery: 0.5
+
+site_map:                           # 1.2 orthomosaic backbone (ml/site_map.py)
+  enabled: true
+  max_side: 4096                    # orthomosaic is downscaled to this for registration
+  frame_max_side: 960
+  search_window_m: 120.0            # GPS prior: map keypoints within this radius
+  max_keypoints: 4000
+  lowe_ratio: 0.75
+  ransac_reproj_threshold: 6.0
+  min_inliers: 25
+  min_inlier_ratio: 0.25
+
+reid_head:                          # 1.3 metric-learning identity head (training/train_reid_head.py)
+  enabled: true
+  checkpoint: "models/reid_head.pt" # absent → global backbone embedding (baseline)
+
+change_mask:                        # 2.1 pixel change (ml/pixel_change.py)
+  enabled: true
+  checkpoint: "models/change_detector.pt"   # Siamese net (training/train_change_detector.py); absent → classical
+  z_threshold: 4.0
+  abs_floor: 18.0
+  min_area_fraction: 0.0015
+  work_max_side: 320
+
+segmentation:                       # 3.3 defect masks (ml/segmentation.py)
+  backend: "classical"              # classical | yolo_seg | sam2
+  yolo_seg_weights: "models/defect_seg.pt"
+  sam2_checkpoint: "models/sam2_hiera_small.pt"
+  sam2_model_cfg: "sam2_hiera_s.yaml"
+  confidence: 0.25
+  crack_kernel_fraction: 0.04
+  crack_min_contrast: 25.0
+  crack_min_elongation: 3.0
+  rust_hue_range: [5, 25]
+  rust_min_saturation: 90
+  soiling_max_saturation: 40
+  soiling_min_value: 150
+
+defect_tracking:                    # 2.2 (ml/defect_tracking.py)
+  max_centroid_distance: 0.15       # normalised reference-view units
+  iou_weight: 0.5
+  resolve_after_missed: 3           # consecutive visits without the defect → instance resolved
+  min_area_fraction: 0.0005
+
+forecast:                           # 2.3 deterioration forecast (ml/forecast.py)
+  urgency_horizon_days: 90.0        # T = 1 − days_to_critical / horizon in revisit priority
+  max_horizon_days: 3650.0
+  crack_m_min: 0.5
+  crack_m_max: 4.0
+  soiling_reset_drop: 0.3
+  critical:                         # critical size per family and metric
+    crack: {length_cm: 30.0, area_cm2: 60.0, area_norm: 0.03}
+    corrosion: {area_cm2: 500.0, area_norm: 0.15}
+    soiling: {area_norm: 0.30}
+    default: {area_norm: 0.20, area_cm2: 400.0, length_cm: 40.0}
+
+guidance:                           # 2.4 in-flight guidance (ml/guidance.py)
+  enabled: true
+  min_revisit_priority: 0.5         # also guide toward due assets, not only alerting ones
+  center_tolerance_deg: 5.0
+  min_move_m: 0.5
+  min_standoff_m: 1.5
+  required_px_per_cm:
+    solar_panel: 2.0
+    utility_pole: 1.5
+    building: 1.0
+    machinery: 3.0
+    default: 2.0
+
+quality_gate:                       # 3.4 (ml/quality_gate.py)
+  enabled: true
+  analysis_side: 256
+  min_laplacian_var: 15.0
+  min_mean: 20.0
+  max_mean: 235.0
+  max_clipped_fraction: 0.4
+  min_distance_m: 0.3
+  max_distance_m: 60.0
+  max_incidence_deg: 70.0
+  min_crop_px: 24
+  flat_asset_types: ["solar_panel"]
+
+coverage:                           # 2.5
+  due_priority: 0.3                 # planned_only_due=true plans assets with R at least this
+  heatmap_cell_m: 25.0
 
 aruco:
   enabled: true
@@ -127,6 +237,22 @@ revisit_priority:
 
 defects:
   resolution_suggestion_missions: 3 # consecutive normal missions before suggesting resolution
+
+health_index:                       # 5.5 (ml/health_index.py)
+  w_severity: 0.4
+  w_defects: 0.25
+  w_growth: 0.25
+  w_staleness: 0.1
+  defects_cap: 3.0
+
+graph:                              # 5.1 priority propagation (ml/knowledge_graph.py)
+  weight: 0.3
+  decay: 0.5
+  min_source_priority: 0.3
+  max_depth: 6
+
+work_orders:                        # 6.2
+  auto_create: true                 # a critical defect opens a ticket
 
 asset_criticality:
   solar_panel: 0.7
@@ -191,6 +317,7 @@ cloud:
   sync_timeout_s: 10.0              # NFR-3 hard limit for start/end sync
   flush_interval_s: 15.0            # background outbox flush cadence (FR-7, §5.3)
   batch_size: 200
+  sync_images: true                 # 6.1 crops / heatmaps / change masks go through the outbox
   username_env: "AUDI_CLOUD_USER"
   password_env: "AUDI_CLOUD_PASSWORD"
   server:
@@ -202,6 +329,15 @@ cloud:
     access_token_minutes: 60
     ssl_certfile_env: "AUDI_CLOUD_SSL_CERT"   # HTTPS when both cert and key are provided
     ssl_keyfile_env: "AUDI_CLOUD_SSL_KEY"
+
+security:                           # 6.5
+  encrypt_images: false             # Fernet at rest; key from image_key_env or image_key_file
+  image_key_env: "AUDI_IMAGE_KEY"
+  image_key_file: "data/.image_key"
+  rate_limit_per_minute: 600        # per client (user, drone key or IP); 0 disables
+  rate_limit_burst: 120
+  signature_window_s: 300           # signed drone uploads: allowed clock skew / replay window
+  drone_scopes: ["frames:upload", "telemetry:write", "sessions:start", "sessions:end"]
 
 auth:
   algorithm: "HS256"

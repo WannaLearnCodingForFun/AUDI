@@ -20,8 +20,11 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as OrmSession
 
 from memory import db
+from memory.store_ext import StoreExtMixin
 from ml.asset_identity import AssetRef, GeoLocation
 from ml.config import cfg, resolve_path
+from ml.forecast import forecast_urgency
+from ml.health_index import health_index
 from ml.revisit_priority import compute_revisit
 from ml.schemas import new_id, utc_now, utc_now_iso
 
@@ -49,16 +52,21 @@ def observation_dict(o: db.Observation) -> Dict[str, Any]:
     return d
 
 
-def prototype_payload(p: db.AssetPrototype, images_dir: Path) -> Dict[str, Any]:
+def prototype_payload(p: db.AssetPrototype, images_dir: Path, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     d = _row(p)
     d.pop("proto_id")
     d["embedding"] = base64.b64encode(p.embedding).decode("ascii")
     img = images_dir / p.image_reference
-    d["image_b64"] = base64.b64encode(img.read_bytes()).decode("ascii") if img.exists() else None
+    if img.exists():
+        from auth.image_crypto import maybe_decrypt
+
+        d["image_b64"] = base64.b64encode(maybe_decrypt(config or {}, img.read_bytes())).decode("ascii")
+    else:
+        d["image_b64"] = None
     return d
 
 
-class LocalStore:
+class LocalStore(StoreExtMixin):
     def __init__(self, config: Dict[str, Any], db_url: Optional[str] = None, images_dir: Optional[Path] = None):
         self.config = config
         scfg = cfg(config, "storage")
@@ -70,6 +78,9 @@ class LocalStore:
         self.db_url = url
         self.engine = db.make_engine(url, int(scfg["busy_timeout_ms"]))
         db.Base.metadata.create_all(self.engine)
+        added = db.migrate_columns(self.engine)
+        if added:
+            logger.info("Local DB migrated, added columns: %s", added)
         self.Session = db.make_session_factory(self.engine)
         self.images_dir = images_dir or resolve_path(scfg["images_dir"])
         self.images_dir.mkdir(parents=True, exist_ok=True)
@@ -256,7 +267,8 @@ class LocalStore:
 
     # ── sessions ──────────────────────────────────────────────────────────
     def create_session(
-        self, site_id: str, operator_id: str, mode: str, start_sync: Dict, simulated: bool = False
+        self, site_id: str, operator_id: str, mode: str, start_sync: Dict, simulated: bool = False,
+        drone_id: Optional[str] = None,
     ) -> Dict:
         now = utc_now()
         with self.txn() as s:
@@ -273,6 +285,7 @@ class LocalStore:
                 assets_processed=0,
                 simulated=simulated,
                 start_sync=start_sync,
+                drone_id=drone_id,
             )
             s.add(sess)
             s.flush()
@@ -390,18 +403,36 @@ class LocalStore:
             return self._mission_severities(s, asset_id)
 
     def _apply_revisit(self, s: OrmSession, asset: db.Asset, now: Optional[datetime]) -> Dict[str, float]:
-        comp = compute_revisit(self._mission_severities(s, asset.asset_id), asset.last_checked_ts, self.config, now)
+        severities = self._mission_severities(s, asset.asset_id)
+        days = self._days_to_critical(s, asset.asset_id, now)
+        comp = compute_revisit(severities, asset.last_checked_ts, self.config, now, days_to_critical=days)
         asset.revisit_priority_score = comp["revisit_priority"]
         asset.revisit_components = comp
+        open_sev = list(s.scalars(select(db.Defect.severity_score).where(db.Defect.asset_id == asset.asset_id, db.Defect.status != "Resolved")))
+        growth = forecast_urgency(days, self.config) if days is not None else comp["trend"]
+        asset.health_index = health_index(comp["recent_severity"], open_sev, growth, comp["days_since_inspection"], self.config)
         return comp
 
     def recompute_revisit(self, site_id: str, now: Optional[datetime] = None, enqueue: bool = True) -> List[Dict]:
         """FR-20 / D9: recompute R for every asset at the site, seen or not."""
+        from ml.knowledge_graph import propagate_priority
+
         now = now or utc_now()
         with self.txn() as s:
-            out = []
-            for a in s.scalars(select(db.Asset).where(db.Asset.site_id == site_id)):
+            assets = list(s.scalars(select(db.Asset).where(db.Asset.site_id == site_id)))
+            for a in assets:
                 self._apply_revisit(s, a, now)
+            # 5.1: a deteriorating asset raises the priority of the assets that depend on it
+            relations = [_row(r) for r in s.scalars(select(db.AssetRelation).where(db.AssetRelation.site_id == site_id))]
+            if relations:
+                boosts = propagate_priority({a.asset_id: a.revisit_priority_score for a in assets}, relations, self.config)
+                for a in assets:
+                    b = boosts.get(a.asset_id)
+                    if b:
+                        a.revisit_components = {**(a.revisit_components or {}), "graph_boost": b["boost"], "graph_source": b["source"]}
+                        a.revisit_priority_score = min(1.0, a.revisit_priority_score + b["boost"])
+            out = []
+            for a in assets:
                 if enqueue:
                     a.updated_ts = now.isoformat()
                     self._enqueue(s, "asset", a.asset_id, site_id, _row(a))
@@ -436,6 +467,38 @@ class LocalStore:
     def image_path(self, ref: str) -> Path:
         return self.images_dir / ref
 
+    def save_pil(self, ref: str, pil, fmt: str = "JPEG", quality: int = 90) -> Path:
+        """Write an image under images_dir (sealed when images are encrypted at rest, 6.5)."""
+        import io
+
+        from auth.image_crypto import maybe_encrypt
+
+        buf = io.BytesIO()
+        pil.save(buf, format=fmt, **({"quality": quality} if fmt.upper() == "JPEG" else {}))
+        path = self.images_dir / ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(maybe_encrypt(self.config, buf.getvalue()))
+        return path
+
+    def seal(self, ref: str) -> None:
+        """Encrypt a file another component wrote in plaintext (no-op when encryption is off)."""
+        from auth.image_crypto import encryption_enabled, maybe_encrypt
+
+        path = self.images_dir / ref
+        if encryption_enabled(self.config) and path.exists():
+            path.write_bytes(maybe_encrypt(self.config, path.read_bytes()))
+
+    def open_pil(self, ref: str):
+        import io
+
+        from PIL import Image
+
+        path = self.images_dir / ref
+        if not path.exists():
+            return None
+        with Image.open(io.BytesIO(self.read_image_bytes(ref))) as im:
+            return im.convert("RGB")
+
     def asset_image_dir(self, site_id: str, asset_id: str) -> Path:
         d = self.images_dir / site_id / asset_id
         d.mkdir(parents=True, exist_ok=True)
@@ -453,6 +516,7 @@ class LocalStore:
         prototype: Optional[Dict[str, Any]],
         evict_proto_id: Optional[int],
         resolution_missions: int,
+        defect_regions: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
         """Persist one processed asset atomically and return the stored state.
 
@@ -515,13 +579,17 @@ class LocalStore:
                 new_proto_id = p.proto_id
                 if a.reference_proto_id is None or is_new:
                     a.reference_proto_id = p.proto_id
-                self._enqueue(s, "prototype", p.proto_uid, site_id, prototype_payload(p, self.images_dir))
+                self._enqueue(s, "prototype", p.proto_uid, site_id, prototype_payload(p, self.images_dir, self.config))
             if evicted is not None and a.reference_proto_id == evicted:
                 a.reference_proto_id = new_proto_id or s.scalar(
                     select(db.AssetPrototype.proto_id).where(db.AssetPrototype.asset_id == a.asset_id).limit(1)
                 )
 
             defect_event = self._apply_defects(s, a, obs, resolution_missions)
+            s.flush()
+            instances = self._apply_instances(s, a, obs, defect_regions)
+            verified = self._verify_work_orders(s, a, obs)
+            work_orders = self._auto_work_orders(s, a, obs, defect_event)
             s.flush()
             revisit = self._apply_revisit(s, a, None)
 
@@ -548,7 +616,22 @@ class LocalStore:
                 "defect": defect_event,
                 "proto_id": new_proto_id,
                 "evicted_proto_id": evicted,
+                "instances": instances,
+                "work_orders": work_orders + verified,
             }
+
+    def _auto_work_orders(self, s: OrmSession, a: db.Asset, obs: db.Observation, defect_event) -> List[Dict[str, Any]]:
+        """6.2: a defect whose severity crosses the critical level opens a work order."""
+        wcfg = self.config.get("work_orders") or {}
+        if not defect_event or not wcfg.get("auto_create", True):
+            return []
+        critical = float(cfg(self.config, "severity", "levels", "critical"))
+        out = []
+        for d in defect_event["defects"]:
+            if obs.is_defect and d["defect_type"] == obs.defect_type and obs.severity_score > critical:
+                out.append(self.create_work_order(a.asset_id, d["defect_id"], f"Repair {d['defect_type']} on {a.asset_id}",
+                                                  "critical", "audi", s=s))
+        return out
 
     def _apply_defects(
         self, s: OrmSession, a: db.Asset, obs: db.Observation, resolution_missions: int
@@ -773,6 +856,28 @@ class LocalStore:
                 if s.get(db.DefectTrend, t["trend_id"]) is None:
                     s.add(db.DefectTrend(**t))
                     counts["defect_trend"] += 1
+            lww = {"defect_instance": (db.DefectInstance, "instance_id", "updated_ts"),
+                   "work_order": (db.WorkOrder, "work_order_id", "updated_ts")}
+            for entity, (model, key, ts_field) in lww.items():
+                for d in records.get(entity, []):
+                    cur = s.get(model, d[key])
+                    if cur is None:
+                        s.add(model(**d))
+                        counts[entity] += 1
+                    elif str(d.get(ts_field, "")) > str(getattr(cur, ts_field) or ""):
+                        for k, v in d.items():
+                            setattr(cur, k, v)
+                        counts[entity] += 1
+            s.flush()
+            append_only = {"defect_measurement": (db.DefectMeasurement, "measurement_id"),
+                           "asset_relation": (db.AssetRelation, "relation_id"),
+                           "alert_feedback": (db.AlertFeedback, "feedback_id"),
+                           "site_map": (db.SiteMap, "map_id")}
+            for entity, (model, key) in append_only.items():
+                for d in records.get(entity, []):
+                    if s.get(model, d[key]) is None:
+                        s.add(model(**d))
+                        counts[entity] += 1
             for p in records.get("prototype", []):
                 exists = s.scalar(select(db.AssetPrototype).where(db.AssetPrototype.proto_uid == p["proto_uid"]))
                 if exists is not None:
@@ -793,7 +898,43 @@ class LocalStore:
                     )
                 )
                 counts["prototype"] += 1
+        if records.get("asset_op"):
+            counts["asset_op"] = self.apply_asset_ops(records["asset_op"])
+        if records.get("image"):
+            counts["image"] = self.apply_remote_images(records["image"])
         return counts
+
+    # ── observation images in the outbox (6.1) ────────────────────────────
+    def enqueue_images(self, site_id: str, refs: Sequence[Optional[str]]) -> int:
+        """Queue stored image files for cloud upload (crops, heatmaps, change masks)."""
+        n = 0
+        with self.txn() as s:
+            for ref in refs:
+                if not ref:
+                    continue
+                path = self.images_dir / ref
+                if not path.exists():
+                    continue
+                self._enqueue(s, "image", ref, site_id, {"ref": ref, "data_b64": base64.b64encode(self.read_image_bytes(ref)).decode("ascii")})
+                n += 1
+        return n
+
+    def read_image_bytes(self, ref: str) -> bytes:
+        """Plain bytes of a stored image (decrypting it when images are encrypted at rest, 6.5)."""
+        from auth.image_crypto import maybe_decrypt
+
+        return maybe_decrypt(self.config, (self.images_dir / ref).read_bytes())
+
+    def apply_remote_images(self, items: Sequence[Dict[str, Any]]) -> int:
+        n = 0
+        for it in items:
+            path = (self.images_dir / it["ref"]).resolve()
+            if not path.is_relative_to(self.images_dir.resolve()) or path.exists() or not it.get("data_b64"):
+                continue
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(base64.b64decode(it["data_b64"]))
+            n += 1
+        return n
 
     # ── aggregates ────────────────────────────────────────────────────────
     def summary(self, site_id: Optional[str] = None) -> Dict[str, Any]:
