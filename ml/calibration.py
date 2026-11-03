@@ -3,7 +3,7 @@ scripts/calibrate_camera.py and tests. Writes the JSON that ml/camera_model.py l
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, Sequence, Tuple
 
 import cv2
 import numpy as np

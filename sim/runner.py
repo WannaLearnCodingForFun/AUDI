@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 
 from memory.store import LocalStore
 from ml.condition_classifier import PrototypeConditionClassifier
@@ -17,7 +16,7 @@ from ml.detector import Detection, Detector
 from ml.embedding_model import AssetEmbeddingModel
 from ml.semantic_memory import SemanticMemoryEngine
 from sim.render import SimFrame, fly_mission
-from sim.world import KINDS_BY_TYPE, LABEL, SimWorld, build_world
+from sim.world import KINDS_BY_TYPE, LABEL, SimWorld
 
 SITE = "site_sim"
 
@@ -81,10 +80,11 @@ def sim_config(base: Optional[Dict[str, Any]] = None, tmp: Optional[Path] = None
     return cfg
 
 
-def run(world: SimWorld, missions: int, config: Dict[str, Any], embedder=None, seed: int = 0, coverage: float = 1.0,
-        frames_by_mission: Optional[List[List[SimFrame]]] = None) -> Dict[str, Any]:
+def run(world: Optional[SimWorld], missions: int, config: Dict[str, Any], embedder=None, seed: int = 0, coverage: float = 1.0,
+        frames_by_mission: Optional[List[List[SimFrame]]] = None, classifier=None) -> Dict[str, Any]:
+    """Replay missions; `world=None` with `frames_by_mission` = recorded (Gazebo / real) data."""
     embedder = embedder or AssetEmbeddingModel.from_config(config)
-    clf = sim_classifier(world, embedder)
+    clf = classifier or sim_classifier(world, embedder)
     store = LocalStore(config)
     store.ensure_site(SITE, "Simulated site")
     det = GroundTruthDetector(seed=seed)

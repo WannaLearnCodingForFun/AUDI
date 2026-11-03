@@ -113,3 +113,43 @@ export const wsUrl = (path) => {
 }
 
 export default api
+
+// ── upgrades ────────────────────────────────────────────────────────────
+// 1.2 site map, 2.5 coverage, 4.4 twin, 4.5 route plan, 5.5 health
+export const getSiteMap = (siteId) => data(api.get(`/sites/${siteId}/map`))
+export const getCoverage = (sessionId) => data(api.get(`/sessions/${sessionId}/coverage`))
+export const getUnseen = (siteId) => data(api.get(`/sites/${siteId}/unseen`))
+export const getTwin = (siteId) => data(api.get(`/sites/${siteId}/twin`))
+export const getSiteHealth = (siteId) => data(api.get(`/sites/${siteId}/health`))
+export const getRoutePlan = (siteId, body) => data(api.post(`/sites/${siteId}/route-plan`, body))
+export const getRoutePlanFile = (siteId, body) => data(api.post(`/sites/${siteId}/route-plan`, body, { params: { format: 'plan' }, responseType: 'blob' }))
+export const getOwnerReport = (siteId, month) => data(api.get(`/sites/${siteId}/owner-report`, { params: { month } }))
+export const getOwnerReportPdf = (siteId, month) => data(api.get(`/sites/${siteId}/owner-report`, { params: { month, format: 'pdf' }, responseType: 'blob' }))
+// 1.4 merge / split, audit; 2.2 instances; 5.1 graph; 5.2 queries
+export const mergeAssets = (keepId, mergeId) => data(api.post('/assets/merge', { keep_id: keepId, merge_id: mergeId }))
+export const splitAsset = (assetId, observationIds) => data(api.post(`/assets/${assetId}/split`, { observation_ids: observationIds }))
+export const getAudit = (siteId) => data(api.get('/audit', { params: { site_id: siteId || undefined } }))
+export const getAssetInstances = (assetId) => data(api.get(`/assets/${assetId}/defect-instances`))
+export const getInstance = (id) => data(api.get(`/defect-instances/${id}`))
+export const getRelations = (siteId) => data(api.get(`/sites/${siteId}/relations`))
+export const addRelation = (parentId, childId, relation) => data(api.post('/relations', { parent_id: parentId, child_id: childId, relation }))
+export const deleteRelation = (id) => data(api.delete(`/relations/${id}`))
+export const askMemory = (question, siteId) => data(api.post('/query', { question, site_id: siteId || undefined }))
+// 5.4 feedback; 6.2 work orders; 6.3 drones
+export const sendFeedback = (observationId, label, extra = {}) => data(api.post(`/observations/${observationId}/feedback`, { label, ...extra }))
+export const getFeedbackStats = (siteId) => data(api.get('/feedback/stats', { params: { site_id: siteId || undefined } }))
+export const getWorkOrders = (params) => data(api.get('/work-orders', { params }))
+export const getWorkOrder = (id) => data(api.get(`/work-orders/${id}`))
+export const createWorkOrder = (body) => data(api.post('/work-orders', body))
+export const updateWorkOrder = (id, body) => data(api.patch(`/work-orders/${id}`, body))
+export const getDrones = () => data(api.get('/admin/drones'))
+export const registerDrone = (body) => data(api.post('/admin/drones', body))
+export const revokeDrone = (id) => data(api.post(`/admin/drones/${id}/revoke`))
+export const saveBlob = (blob, name) => {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

@@ -25,8 +25,8 @@ sys.path.insert(0, str(ROOT))
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from ml.config import load_config, resolve_path  # noqa: E402
-from ml.thermal import ThermalFrame, hotspots, thermal_features  # noqa: E402
+from ml.config import resolve_path  # noqa: E402
+from ml.thermal import ThermalFrame, thermal_features  # noqa: E402
 
 HOT = {"Hot-Spot", "Hot-Spot-Multi", "Cell", "Cell-Multi", "Diode", "Diode-Multi"}
 
@@ -55,7 +55,6 @@ def main(argv=None) -> int:
     from sklearn.metrics import classification_report, recall_score
     from sklearn.model_selection import train_test_split
 
-    config = load_config()
     X, y, hot = load(args.root)
     Xtr, Xte, ytr, yte, htr, hte = train_test_split(X, y, hot, test_size=0.2, random_state=0, stratify=y)
     clf = LogisticRegression(max_iter=2000, class_weight="balanced").fit(Xtr, ytr)

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { endSession, errorText, getSession, liveCapture, liveStart, liveStatus, liveStop, liveStreamUrl } from '../api'
+import { endSession, errorText, getSession, liveCapture, liveStart, liveStatus, liveStop, liveStreamUrl, getCoverage } from '../api'
 import { Card, ErrorBox, fmt, StatusPill, when } from '../components/ui'
+import Explanation from '../components/Explanation'
 import { useAsync, useSocket } from '../hooks'
 import { ALERTS, BROWSER_CAMERA, STREAM_RETRY_MS } from '../settings'
 
@@ -74,6 +75,7 @@ export default function LiveFlight() {
   const [form, setForm] = useState({ mode: 'camera', camera_source: '', detection_mode: '', asset_type: 'solar_panel' })
   const [status, setStatus] = useState(null)
   const [alerts, setAlerts] = useState([])
+  const [coverage, setCoverage] = useState(null)
   const [banner, setBanner] = useState(null)
   const [error, setError] = useState(null)
   const [streamKey, setStreamKey] = useState(liveStreamUrl())
@@ -95,7 +97,7 @@ export default function LiveFlight() {
       const a = {
         key: `${ev.observation_id || ev.asset_id}-${ev.timestamp}`, level: msg.alert, asset_id: ev.asset_id,
         label: ev.condition?.label, severity: ev.severity_score, ts: ev.timestamp, latency: msg.alert_latency_ms,
-        history: ev.history,
+        history: ev.history, event: ev,
       }
       setAlerts((list) => [a, ...list].slice(0, ALERTS.maxShown))
       setBanner(a)
@@ -223,6 +225,19 @@ export default function LiveFlight() {
             </dl>
           </Card>
 
+          {(status?.guidance || []).length > 0 && (
+            <Card title="Inspection guidance">
+              <ul className="small">{status.guidance.slice(0, 4).map((g) => <li key={`${g.asset_id}-${g.received}`}>{g.message}</li>)}</ul>
+            </Card>
+          )}
+          <Card title="Coverage" actions={<button className="btn small ghost" onClick={() => getCoverage(sessionId).then(setCoverage).catch((e) => setError(errorText(e)))}>Check before landing</button>}>
+            {!coverage ? <div className="small muted">Which planned assets this flight has not seen yet.</div> : (
+              <>
+                <div className="small">{coverage.seen} / {coverage.planned} planned assets seen ({fmt(100 * coverage.coverage, 0)}%) · {coverage.new_assets.length} new</div>
+                {coverage.missing.length > 0 && <ul className="small">{coverage.missing.slice(0, 12).map((m) => <li key={m.asset_id}><Link className="mono" to={`/assets/${m.asset_id}`}>{m.asset_id}</Link> · R {fmt(m.revisit_priority)}</li>)}</ul>}
+              </>
+            )}
+          </Card>
           <Card title={`Alerts (${alerts.length})`}>
             {alerts.length === 0 ? <div className="muted">No alerts yet.</div> : (
               <ul className="alert-list">
@@ -231,6 +246,9 @@ export default function LiveFlight() {
                     <div className="row between"><strong>{a.label}</strong><span>S {fmt(a.severity)}</span></div>
                     <div className="small"><Link to={`/assets/${a.asset_id}`} className="mono">{a.asset_id}</Link> · {when(a.ts)} · {fmt(a.latency, 0)} ms</div>
                     {a.history && <div className="small muted">was {a.history.previous_condition}{a.history.open_defects?.length ? ` · ${a.history.open_defects.length} open defect(s)` : ''}</div>}
+                    {a.event?.growth && <div className="small">{a.event.growth}</div>}
+                    {a.event?.guidance && <div className="small text-warn">{a.event.guidance.message}</div>}
+                    {a.event?.explanation && <details><summary className="small">Why?</summary><Explanation event={a.event} /></details>}
                   </li>
                 ))}
               </ul>

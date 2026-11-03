@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getAsset, getAssetHistory, getSummary, imageUrl } from '../api'
+import { getAsset, getAssetHistory, getAssetInstances, getSummary, imageUrl, sendFeedback } from '../api'
 import SeverityChart from '../components/SeverityChart'
 import { Card, Empty, ErrorBox, fmt, Loading, Severity, Simulated, StatusPill, when } from '../components/ui'
 import { useAsync } from '../hooks'
@@ -10,6 +10,8 @@ export default function AssetDetail() {
   const asset = useAsync(() => getAsset(assetId), [assetId])
   const hist = useAsync(() => getAssetHistory(assetId), [assetId])
   const levels = useAsync(() => getSummary(), [])
+  const instances = useAsync(() => getAssetInstances(assetId), [assetId])
+  const [fb, setFb] = useState({})
   const [heat, setHeat] = useState(false)
   const [selected, setSelected] = useState(null)
 
@@ -33,6 +35,9 @@ export default function AssetDetail() {
                 <dt>Current condition</dt><dd className={a.current_is_defect ? 'text-crit' : ''}>{a.current_condition}</dd>
                 <dt>Reference (last confirmed)</dt><dd>{a.reference_condition?.label}</dd>
                 <dt>Criticality C</dt><dd>{fmt(a.criticality)}</dd>
+                <dt>Health index</dt><dd>{fmt(a.health_index, 0)} / 100</dd>
+                {a.revisit_components?.trend_source === 'forecast' && <><dt>Forecast</dt><dd>critical in about {fmt(a.revisit_components.days_to_critical, 0)} days (drives T)</dd></>}
+                {a.revisit_components?.graph_boost ? <><dt>Dependency boost</dt><dd>+{fmt(a.revisit_components.graph_boost)} from <Link className="mono" to={`/assets/${a.revisit_components.graph_source}`}>{a.revisit_components.graph_source}</Link></dd></> : null}
                 <dt>Revisit priority R</dt><dd>{fmt(a.revisit_priority_score)}{a.revisit_components && <span className="muted small"> · Sr {fmt(a.revisit_components.recent_severity)} · T {fmt(a.revisit_components.trend)} · D {fmt(a.revisit_components.days_since_inspection)}</span>}</dd>
                 <dt>ArUco marker</dt><dd>{a.marker_id ?? '—'}</dd>
                 <dt>Location</dt><dd>{a.location ? `${fmt(a.location.latitude, 6)}, ${fmt(a.location.longitude, 6)} (${a.location_samples} samples)` : '—'}</dd>
@@ -57,6 +62,12 @@ export default function AssetDetail() {
                   <div className="small muted">{when(sel.observation_ts)} · session <Link to={`/report/${sel.session_id}`} className="mono">{sel.session_id}</Link></div>
                   {heat && !sel.heatmap_reference && <div className="small muted">No heatmap for this observation (first view of the asset).</div>}
                   {sel.metadata?.simulation_note && <div className="small muted">Simulation: {sel.metadata.simulation_note}</div>}
+                  {sel.metadata?.mask_reference && <a className="small" href={imageUrl(sel.metadata.mask_reference)} target="_blank" rel="noreferrer">change mask</a>}
+                  <div className="row gap small">
+                    {fb[sel.observation_id] ? <span className="muted">feedback: {fb[sel.observation_id]}</span> : ['confirmed', 'false_alarm', 'wrong_asset'].map((l) => (
+                      <button key={l} className="btn small ghost" onClick={() => sendFeedback(sel.observation_id, l).then(() => setFb({ ...fb, [sel.observation_id]: l }))}>{l.replace('_', ' ')}</button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="filmstrip">
@@ -83,6 +94,16 @@ export default function AssetDetail() {
                   ))}
                 </tbody>
               </table>
+            </Card>
+            <Card title="Tracked defect instances">
+              {!(instances.data || []).length ? <Empty>No tracked instances.</Empty> : (
+                <table className="table"><thead><tr><th>Defect</th><th>Size</th><th>Growth</th><th>Critical by</th><th>Status</th></tr></thead>
+                  <tbody>{instances.data.map((i) => (
+                    <tr key={i.instance_id}><td><Link to={`/defect-instances/${i.instance_id}`}>{i.defect_type}</Link></td>
+                      <td>{i.area_cm2 != null ? `${fmt(i.area_cm2, 1)} cm²` : `${fmt(100 * i.area_norm, 2)}%`}{i.length_cm != null ? ` · ${fmt(i.length_cm, 1)} cm` : ''}</td>
+                      <td>{i.forecast?.growth_since_last_pct != null ? `${fmt(i.forecast.growth_since_last_pct, 0)}%` : '—'}</td>
+                      <td>{i.predicted_critical_ts ? when(i.predicted_critical_ts) : '—'}</td><td>{i.status}</td></tr>))}</tbody></table>
+              )}
             </Card>
             <Card title="Defects">
               {(hist.data?.defects || []).length === 0 ? <Empty>None recorded.</Empty> : (

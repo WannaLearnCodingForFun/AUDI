@@ -21,7 +21,7 @@ import json
 import random
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
 import torch

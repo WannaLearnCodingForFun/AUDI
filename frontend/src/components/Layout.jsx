@@ -12,8 +12,13 @@ const NAV = [
   { to: '/defects', label: 'Defects', roles: ['maintenance', 'operator'] },
   { to: '/assets', label: 'Assets', roles: ['operator', 'maintenance'] },
   { to: '/memory', label: 'Analyse & search', roles: ['operator', 'maintenance'] },
+  { to: '/ask', label: 'Ask the memory', roles: ['operator', 'maintenance'] },
+  { to: '/health/site_demo', label: 'Site health & routes', roles: ['operator', 'maintenance'] },
+  { to: '/twin/site_demo', label: '3D twin', roles: ['operator', 'maintenance'] },
+  { to: '/work-orders', label: 'Work orders', roles: ['maintenance', 'operator'] },
   { to: '/admin/config', label: 'Configuration', roles: [] },
   { to: '/admin/users', label: 'Sites & users', roles: [] },
+  { to: '/admin/memory', label: 'Merge, graph & drones', roles: [] },
   { to: '/admin/metrics', label: 'Metrics & sync', roles: [] },
 ]
 

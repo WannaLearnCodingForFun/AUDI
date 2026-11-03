@@ -38,3 +38,6 @@ frontend/dist/
 # Logs
 *.log
 sim/gazebo/build/
+deploy/config.cloud.yaml
+deploy/metrics_token
+.env

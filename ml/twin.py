@@ -7,12 +7,12 @@ position on the reference view. When a photogrammetry mesh exists for the site
 (OpenDroneMap `odm_textured_model_geo.obj` / glTF, or a Gaussian-splat .ply, registered as
 site_maps.meta.mesh_path) it is referenced so the viewer loads it underneath.
 
-Clicking a defect in the viewer opens `/defects/instances/{instance_id}` → its history.
+Clicking a defect in the viewer opens its history page (`/defect-instances/{instance_id}`).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ml.config import get_nested
 from ml.geo_projection import latlon_to_offset

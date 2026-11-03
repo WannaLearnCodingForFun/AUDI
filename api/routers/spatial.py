@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from ml.config import cfg, get_nested, resolve_path
+from ml.config import get_nested, resolve_path
 from ml.coverage import coverage, unseen_heatmap
 from ml.route_plan import build_plan, to_plan_file
 from ml.schemas import new_id

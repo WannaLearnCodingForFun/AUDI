@@ -1,7 +1,6 @@
 """Phase 3 sensing / perception: calibration (3.6), thermal fusion (3.1), quality gate (3.4),
 focal loss + copy-paste (3.5), Siamese change net training (2.1), edge export (4.1)."""
 
-import math
 
 import cv2
 import numpy as np

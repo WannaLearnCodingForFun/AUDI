@@ -9,7 +9,7 @@ from PIL import Image
 from memory.store import LocalStore
 from ml.asset_identity import haversine_m
 from ml.camera_model import CameraIntrinsics, distance_from_bbox, scale_for_bbox
-from ml.detector import Detection, Detector, FullFrameDetector
+from ml.detector import Detection, Detector
 from ml.geo_projection import CameraPose, camera_axes, latlon_to_offset, project_pixel
 from ml.semantic_memory import SemanticMemoryEngine
 from ml.site_map import MapRegistrar, SiteMap, geo_to_pixel, pixel_to_geo, point_in_polygon

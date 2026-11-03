@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - name: Install (CPU torch)
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install -r requirements.txt onnx onnxruntime ruff
+      - name: Lint
+        run: ruff check .
+      - name: Tests
+        env: {PYTHONPATH: .}
+        run: python -m pytest -q
+      - name: Simulated-mission evaluation (gates)
+        env: {PYTHONPATH: .}
+        run: python scripts/run_sim_eval.py --quick
+      # scripts/bench.py (NFR-1/2/3) needs the trained classifier in models/, which is not in the
+      # repository; it runs on the inspection machine (make bench) — see PROGRESS.md.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: reports/sim/
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "20", cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config -q
+        env: {POSTGRES_PASSWORD: x, MINIO_ROOT_USER: x, MINIO_ROOT_PASSWORD: x, AUDI_CLOUD_JWT_SECRET: x, AUDI_CLOUD_PASSWORD: x,
+              AUDI_JWT_SECRET: x, AUDI_ADMIN_PASSWORD: x, AUDI_OPERATOR_PASSWORD: x, AUDI_MAINTENANCE_PASSWORD: x, AUDI_IMAGE_KEY: x,
+              AUDI_METRICS_TOKEN: x, GRAFANA_ADMIN_PASSWORD: x}
+      - run: docker build -f Dockerfile.cloud -t audi-cloud .

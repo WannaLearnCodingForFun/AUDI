@@ -4,7 +4,6 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
-import pytest
 
 from memory.store import LocalStore
 from ml.detector import FullFrameDetector

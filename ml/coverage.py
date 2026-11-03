@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ml.config import get_nested
 from ml.revisit_priority import parse_ts

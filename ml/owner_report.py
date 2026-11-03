@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from ml.config import get_nested
 from ml.forecast import days_until, family
@@ -57,7 +57,6 @@ def _health_at(store, asset: Dict[str, Any], when: datetime, config) -> Optional
 def build_owner_report(store, site_id: str, month: str, config: Dict[str, Any]) -> Dict[str, Any]:
     oc = get_nested(config, "owner_report", default={}) or {}
     start, end = month_bounds(month)
-    prev_start = (start - timedelta(days=1)).replace(day=1)
     assets = store.list_assets(site_id)
     sessions = [s for s in store.list_sessions(site_id) if _in(s["started_ts"], start, end)]
     inspected = set()

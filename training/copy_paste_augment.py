@@ -23,7 +23,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
 from ml.config import cfg, load_config, resolve_path  # noqa: E402

@@ -14,7 +14,6 @@ from ml.detector import FullFrameDetector
 from ml.forecast import family, forecast_series, holdout_error_days
 from ml.pixel_change import PixelChangeDetector
 from ml.revisit_priority import compute_revisit
-from ml.schemas import utc_now
 from ml.segmentation import ClassicalSegmenter, regions_from_mask, skeleton_length
 from ml.semantic_memory import SemanticMemoryEngine
 from ml.siamese_change import mask_metrics

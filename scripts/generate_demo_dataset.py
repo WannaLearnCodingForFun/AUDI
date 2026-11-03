@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 ASSET_TYPES = ["solar_panel", "utility_pole", "building", "machinery"]
 SPLITS = ["train", "validation", "test"]

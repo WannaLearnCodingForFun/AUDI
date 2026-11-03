@@ -12,12 +12,11 @@ sim.metrics evaluate either source.
 from __future__ import annotations
 
 import json
-import math
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List
 
 import numpy as np
 from PIL import Image, ImageEnhance

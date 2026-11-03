@@ -1,0 +1,29 @@
+# HTTPS front door. AUDI_DOMAIN=audi.example.org → automatic Let's Encrypt certificates;
+# AUDI_DOMAIN=localhost → Caddy's internal CA (trust it once with `caddy trust`).
+{$AUDI_DOMAIN:localhost} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /ws/* {
+		reverse_proxy api:8000
+	}
+	handle /cloud/* {
+		reverse_proxy cloud:8100
+	}
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

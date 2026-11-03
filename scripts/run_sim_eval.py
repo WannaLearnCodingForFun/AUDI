@@ -57,21 +57,34 @@ def mask_auc(log) -> Optional[float]:
 
 
 def evaluate(seeds: List[int], missions: int, missions_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Simulated worlds (one per seed), or the recorded missions in `missions_dir` (Gazebo or the
+    real multi-visit dataset, 7.1) — there the trained condition classifier is used and the
+    forecast study is skipped (no ground-truth growth law)."""
     base = load_config()
-    out: Dict[str, Any] = {"seeds": seeds, "missions": missions, "reid": {}, "change": None, "forecast": None, "timing_s": {}}
+    out: Dict[str, Any] = {"seeds": seeds, "missions": missions, "source": str(missions_dir or "simulator"),
+                           "reid": {}, "change": None, "forecast": None, "timing_s": {}}
     from ml.embedding_model import AssetEmbeddingModel
 
+    recorded = None
+    if missions_dir is not None:
+        recorded = [list(read_mission(p)) for p in sorted(missions_dir.iterdir()) if (p / "frames.jsonl").exists()]
+        seeds = seeds[:1]
+        out["seeds"], out["missions"] = [], len(recorded)
     full_runs = []
     for mode in MODES:
         rows = []
         t0 = time.time()
         for seed in seeds:
-            world = build_world(seed=seed, missions=missions)
             cfg = sim_config(base, mode=mode)
-            frames = None
-            if missions_dir is not None:
-                frames = [list(read_mission(p)) for p in sorted(missions_dir.iterdir()) if (p / "frames.jsonl").exists()]
-            res = run(world, len(frames) if frames else missions, cfg, AssetEmbeddingModel.from_config(cfg), seed=seed, frames_by_mission=frames)
+            emb = AssetEmbeddingModel.from_config(cfg)
+            if recorded is not None:
+                from ml.condition_classifier import load_condition_classifier
+
+                res = run(None, len(recorded), cfg, emb, seed=seed, frames_by_mission=recorded, classifier=load_condition_classifier(cfg, emb))
+                res["world"] = None
+            else:
+                world = build_world(seed=seed, missions=missions)
+                res = run(world, missions, cfg, emb, seed=seed)
             rows.append(reid_metrics(res["log"]))
             if mode == MODES[-1]:
                 full_runs.append(res)
@@ -85,20 +98,21 @@ def evaluate(seeds: List[int], missions: int, missions_dir: Optional[Path] = Non
            for k in ("label", "patch", "mask", "engine")},
         "mask_auc": _mean([mask_auc(r["log"]) for r in full_runs]),
     }
-    gm = [growth_metrics(r) for r in full_runs]
-    out["forecast"] = {
-        "damaged_assets": sum(g["damaged_assets"] for g in gm), "tracked_assets": sum(g["tracked"] for g in gm),
-        "severity_slope_mae_days": _mean([g["slope_mae_days"] for g in gm]),
-        "growth_model_mae_days": _mean([g["growth_mae_days"] for g in gm]),
-        "series_slope": sum(len(g["slope_errors_days"]) for g in gm), "series_growth": sum(len(g["growth_errors_days"]) for g in gm),
-    }
+    if recorded is None:
+        gm = [growth_metrics(r) for r in full_runs]
+        out["forecast"] = {
+            "damaged_assets": sum(g["damaged_assets"] for g in gm), "tracked_assets": sum(g["tracked"] for g in gm),
+            "severity_slope_mae_days": _mean([g["slope_mae_days"] for g in gm]),
+            "growth_model_mae_days": _mean([g["growth_mae_days"] for g in gm]),
+            "series_slope": sum(len(g["slope_errors_days"]) for g in gm), "series_growth": sum(len(g["growth_errors_days"]) for g in gm),
+        }
     return out
 
 
 def to_markdown(r: Dict[str, Any]) -> str:
     f = lambda v, p=3: "n/a" if v is None else (f"{v:.{p}f}" if isinstance(v, float) else str(v))
     L = ["# Simulated-mission evaluation (4.3) and ablations (7.2)", "",
-         f"Seeds {r['seeds']}, {r['missions']} missions each. Synthetic site: rows of near-identical solar panels, a pole line, a wall, "
+         f"Source: {r['source']}. Seeds {r['seeds']}, {r['missions']} missions each. Synthetic site: rows of near-identical solar panels, a pole line, a wall, "
          "machinery; damage grows between missions. Backbone: weight-free projection embedder, so absolute numbers are a lower bound "
          "for DINOv2; the comparison between arms is the point.", "",
          "## Re-identification", "", "| Arm | Rank-1 | False-new rate | False-match rate | Revisits |", "|---|---|---|---|---|"]
@@ -111,6 +125,8 @@ def to_markdown(r: Dict[str, Any]) -> str:
     for k, name in (("label", "label difference"), ("patch", "patch difference (b ≥ 0.3)"), ("mask", "pixel mask (≥ 1%)"), ("engine", "engine M-gate")):
         L.append(f"| {name} | {f(c[k]['precision'])} | {f(c[k]['recall'])} | {f(c[k]['f1'])} | {f(c[k]['false_changes_per_100_unchanged'], 1)} |")
     g = r["forecast"]
+    if g is None:
+        return "\n".join(L + ["", "Forecast study skipped: recorded data has no ground-truth growth law.", ""])
     L += ["", "## Forecast", "", f"{g['damaged_assets']} damaged assets, {g['tracked_assets']} with tracked defect instances.", "",
           "| Method | MAE (days) to critical | Series |", "|---|---|---|",
           f"| severity slope | {f(g['severity_slope_mae_days'], 1)} | {g['series_slope']} |",
@@ -128,7 +144,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     seeds = args.seeds or ([7] if args.quick else [7, 11, 13])
     missions = args.missions or (4 if args.quick else 6)
-    r = evaluate(seeds, missions, args.missions_dir)
+    try:
+        r = evaluate(seeds, missions, args.missions_dir)
+    except FileNotFoundError as exc:      # recorded data needs the trained condition classifier
+        print(f"{exc}\nRecorded missions are scored with the trained classifier: run `make train` first.")
+        return 2
     args.out.mkdir(parents=True, exist_ok=True)
     name = "quick" if args.quick else "ablation"
     (args.out / f"{name}.json").write_text(json.dumps(r, indent=2))
