@@ -6,7 +6,7 @@ import io
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from PIL import Image, UnidentifiedImageError
 
 from ml.config import cfg
@@ -67,7 +67,9 @@ def image(ref: str, request: Request, token: Optional[str] = Query(None), servic
     path = (root / ref).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Image not found")
-    return FileResponse(path)
+    data = services.store.read_image_bytes(path.relative_to(root).as_posix())   # decrypts when sealed (6.5)
+    media = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+    return Response(data, media_type=media)
 
 
 async def _read_image(file: UploadFile, services: Services) -> Image.Image:

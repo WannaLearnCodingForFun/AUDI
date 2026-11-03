@@ -57,6 +57,10 @@ def config(tmp_path):
     cfg["cloud"]["server"]["db_url"] = f"sqlite:///{tmp_path}/cloud.db"
     cfg["cloud"]["server"]["secret_file"] = str(tmp_path / "cloud_secret")
     cfg["detection"]["mode"] = "full_frame"
+    cfg["security"]["rate_limit_per_minute"] = 0      # tests/test_platform.py covers the limiter
+    cfg["security"]["image_key_file"] = str(tmp_path / "image_key")
+    cfg["cloud"]["server"]["object_store"]["dir"] = str(tmp_path / "cloud_images")
+    cfg["site_map"]["dir"] = str(tmp_path / "site_maps")
     return cfg
 
 

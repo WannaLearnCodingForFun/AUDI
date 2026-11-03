@@ -53,13 +53,13 @@ class MissionService:
             "unresolved_defects": unresolved,
         }
 
-    def start(self, site_id: str, operator_id: str, simulated: bool = False) -> Dict[str, Any]:
+    def start(self, site_id: str, operator_id: str, simulated: bool = False, drone_id: Optional[str] = None) -> Dict[str, Any]:
         if self.store.get_site(site_id) is None:
             raise KeyError(f"Unknown site: {site_id}")
         sync = self.sync.start_sync(site_id)
         if sync.get("pulled") and any(sync["pulled"].values()):
             self.engine.reload_index()
-        session = self.store.create_session(site_id, operator_id, sync["mode"], sync, simulated)
+        session = self.store.create_session(site_id, operator_id, sync["mode"], sync, simulated, drone_id=drone_id)
         self.engine.start_prefetch(site_id)
         return {"session": session, "sync": sync, "briefing": self.briefing(site_id)}
 
@@ -74,6 +74,9 @@ class MissionService:
         self.engine.end_session_hook(session_id)
         sync = self.sync.end_sync()
         report = build_report(self.store, session_id, sync, self.escalation.for_session(session_id))
+        from ml.coverage import coverage
+
+        report["coverage"] = coverage(self.store, session_id, self.engine.config)
         self.store.update_session(session_id, end_sync=sync, report=report)
         return report
 

@@ -54,13 +54,14 @@ def H(token):
 def fill_path(path):
     return (path.replace("{session_id}", "sess_x").replace("{asset_id}", "asset_x").replace("{defect_id}", "def_x")
             .replace("{notification_id}", "n_x").replace("{user_id}", "1").replace("{site_id}", "site_demo")
-            .replace("{ref:path}", "a/b.jpg"))
+            .replace("{ref:path}", "a/b.jpg").replace("{work_order_id}", "wo_x").replace("{observation_id}", "obs_x")
+            .replace("{instance_id}", "dfi_x").replace("{relation_id}", "rel_x").replace("{drone_id}", "drone_x"))
 
 
 def all_routes():
-    from api.routers import admin, assets, auth, defects, live, notifications, sessions
+    from api.app import ROUTERS
 
-    return [r for m in (auth, sessions, assets, defects, notifications, admin, live) for r in m.router.routes]
+    return [r for m in ROUTERS for r in m.router.routes]
 
 
 def test_every_route_requires_auth(stack):

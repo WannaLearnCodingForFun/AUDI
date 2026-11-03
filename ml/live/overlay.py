@@ -79,6 +79,14 @@ class OverlayRenderer:
                f"processed {status.get('processed_fps', 0):.1f} fps | alert latency p95 {status.get('latency_p95_ms') or 0:.0f} ms")
         self._text(img, bar, (8, int(self.bar_h * 0.65)), (255, 255, 255))
 
+        # 2.4 guidance: one line per guided asset along the bottom edge (never over the asset centre)
+        guided = [t["guidance"] for t in tracks if t.get("guidance")][:3]
+        if guided:
+            gy0 = h - line_h * len(guided) - self.gap
+            self._panel(img, 0, gy0 - self.gap, w, h)
+            for i, msg in enumerate(guided):
+                self._text(img, f"> {msg}", (8, gy0 + line_h * i + int(line_h * 0.6)), (255, 255, 0))
+
         recent = [a for a in alerts if time.time() - a.get("received", 0) < self.alert_display_s]
         if recent:
             x0 = w - self.side_w

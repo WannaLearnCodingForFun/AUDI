@@ -602,6 +602,12 @@ class StoreExtMixin:
             row.pop("api_key_hash")
             return row
 
+    def drone_secret(self, drone_id: str) -> Optional[str]:
+        """HMAC secret for signed uploads: sha256(api_key), known to the drone and to the server."""
+        with self.read() as s:
+            d = s.get(db.Drone, drone_id)
+            return d.api_key_hash if d else None
+
     def touch_drone(self, drone_id: str) -> None:
         with self.txn() as s:
             d = s.get(db.Drone, drone_id)

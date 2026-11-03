@@ -103,6 +103,12 @@ class LiveManager:
             return False
         return p.source.push_jpeg(data)
 
+    def update_pose(self, pose: Dict[str, Any]) -> bool:
+        if self.pipeline is None:
+            return False
+        self.pipeline.set_pose(pose)
+        return True
+
     def capture(self, track_id: Optional[int] = None) -> Optional[int]:
         if self.pipeline is None:
             raise LiveStateError("No live session running")

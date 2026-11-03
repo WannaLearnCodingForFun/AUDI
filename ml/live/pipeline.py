@@ -78,8 +78,26 @@ class LivePipeline:
         self._processed_stamps: Deque[float] = deque(maxlen=30)
         self.tracks: List[Dict[str, Any]] = []
         self.alerts: Deque[Dict[str, Any]] = deque(maxlen=self.max_alerts)
-        self.counters = {"seen": 0, "processed": 0, "skipped_frame_skip": 0, "skipped_duplicate": 0, "events": 0, "alerts": 0, "errors": 0}
+        self.counters = {"seen": 0, "processed": 0, "skipped_frame_skip": 0, "skipped_duplicate": 0, "events": 0, "alerts": 0,
+                         "errors": 0, "rejected_quality": 0}
         self.started_ts: Optional[float] = None
+        self.pose_max_age = float(live.get("pose_max_age_s", 2.0))
+        self._pose: Optional[Dict[str, Any]] = None
+        self._pose_mono = 0.0
+        self.guidance: Deque[Dict[str, Any]] = deque(maxlen=self.max_alerts)
+
+    # ── telemetry (1.1 / 2.4 / 4.2) ───────────────────────────────────────
+    def set_pose(self, pose: Optional[Dict[str, Any]]) -> None:
+        """Latest drone pose (GPS, height above ground, camera heading/pitch/roll)."""
+        with self._lock:
+            self._pose = dict(pose) if pose else None
+            self._pose_mono = time.perf_counter()
+
+    def current_pose(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            if self._pose is None or time.perf_counter() - self._pose_mono > self.pose_max_age:
+                return None
+            return dict(self._pose)
 
     # ── control ───────────────────────────────────────────────────────────
     def start(self) -> None:
@@ -142,7 +160,9 @@ class LivePipeline:
         t0 = time.perf_counter()
         pil = Image.fromarray(cv2.cvtColor(frame.image, cv2.COLOR_BGR2RGB))
         try:
-            events = self.engine.process_frame(pil, self.session_id, self.tracker, force_track_id=forced)
+            events = self.engine.process_frame(pil, self.session_id, self.tracker, force_track_id=forced, pose=self.current_pose())
+            if not events and self.engine.last_frame_quality and not self.engine.last_frame_quality.get("ok", True):
+                self.counters["rejected_quality"] += 1
         except Exception as exc:  # noqa: BLE001 - one bad frame must not stop the live session
             self.counters["errors"] += 1
             logger.exception("Live frame failed")
@@ -166,8 +186,13 @@ class LivePipeline:
                 "condition": {"label": ev.condition.get("label"), "confidence": ev.condition.get("confidence")},
                 "severity_score": ev.severity_score, "severity_level": ev.severity_level,
                 "priority": ev.priority, "critical": ev.critical,
+                "guidance": (ev.guidance or {}).get("message"),
             })
-            if ev.type == "tracked":
+            if ev.guidance:
+                self.guidance.appendleft({"asset_id": ev.asset_id, "message": ev.guidance["message"], "received": time.time()})
+            if ev.type in ("tracked", "rejected"):
+                if ev.type == "rejected":
+                    self.counters["rejected_quality"] += 1
                 continue
             self.counters["events"] += 1
             alert = self._alert_for(ev)
@@ -218,4 +243,6 @@ class LivePipeline:
             "counters": dict(self.counters),
             "tracks": list(self.tracks),
             "alerts": list(self.alerts),
+            "guidance": list(self.guidance),
+            "pose": self.current_pose(),
         }

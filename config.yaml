@@ -329,6 +329,43 @@ cloud:
     access_token_minutes: 60
     ssl_certfile_env: "AUDI_CLOUD_SSL_CERT"   # HTTPS when both cert and key are provided
     ssl_keyfile_env: "AUDI_CLOUD_SSL_KEY"
+    db_url_env: "AUDI_CLOUD_DB_URL"           # e.g. postgresql+psycopg://audi:…@db/audi (docker-compose)
+    object_store:                             # 6.1 observation images
+      kind: "local"                           # local | s3 (any S3-compatible endpoint)
+      dir: "data/cloud_images"
+      bucket_env: "AUDI_S3_BUCKET"
+      endpoint_env: "AUDI_S3_ENDPOINT"
+      region_env: "AWS_REGION"
+      prefix: "audi"
+
+observability:                      # 6.6
+  json_logs: false                  # one JSON object per log line
+  metrics_token_env: "AUDI_METRICS_TOKEN"   # Prometheus bearer token (else an admin JWT)
+
+nl_query:                           # 5.2
+  translator: "rules"               # rules (deterministic) | llm (small Claude model, falls back to rules)
+  llm_model: "claude-haiku-5-5"
+
+route_plan:                         # 4.5 advisory QGroundControl plan
+  min_priority: 0.3
+  cruise_alt_m: 30.0
+  cruise_speed_mps: 5.0
+  hover_speed_mps: 3.0
+  hold_s: 3.0
+  flat_asset_types: ["solar_panel"]
+  standoff_m: {solar_panel: 6.0, utility_pole: 8.0, building: 10.0, machinery: 4.0, default: 8.0}
+  upright_height_m: {utility_pole: 10.0, building: 8.0, machinery: 2.0, default: 6.0}
+
+owner_report:                       # 6.4
+  currency: "EUR"
+  deferral_months: 3
+  repair_cost: {crack: 350.0, corrosion: 220.0, soiling: 40.0, default: 200.0}
+  repair_cost_growth_per_month: 0.08
+  failure_cost: {solar_panel: 600.0, utility_pole: 8000.0, building: 5000.0, machinery: 3000.0, default: 1000.0}
+  panel_kwh_per_month: 45.0
+  energy_price_per_kwh: 0.25
+  loss_per_unit_area: {soiling: 0.9, crack: 3.0, corrosion: 0.5}
+  loss_default_defective: 0.05
 
 security:                           # 6.5
   encrypt_images: false             # Fernet at rest; key from image_key_env or image_key_file
